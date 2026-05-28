@@ -10,7 +10,7 @@
  * Only export high-level primitives here.
  */
 
-export { BlockHash } from "./block.js";
+export { BlockHash, BlockHeader } from "./block.js";
 
 /**
  * If you later add more high-level primitives, expose them here:
