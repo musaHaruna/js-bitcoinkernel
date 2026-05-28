@@ -41,6 +41,7 @@ function runTests() {
 
   console.log("Loader test passed");
   console.log("Exported symbols:", keys);
+  console.log();
 }
 
 runTests();

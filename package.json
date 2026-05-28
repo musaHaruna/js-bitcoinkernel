@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx ./src/js-kernel/index.ts",
-    "test": "tsx ./tests/test-loader.ts",
+    "test": "tsx ./tests/index.ts",
     "start": "node dist/js-kernel/index.js"
   },
   "keywords": [],
