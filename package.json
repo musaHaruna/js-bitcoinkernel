@@ -1,0 +1,30 @@
+{
+  "name": "js-bitcoin-kernel",
+  "version": "1.0.0",
+  "description": "A JavaScript/TypeScript Bitcoin kernel that wraps native C/C++ functions to provide safe and structured access to Bitcoin data structures like block headers and hashes.",
+  "main": "dist/js-kernel/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx ./src/js-kernel/index.ts",
+    "test": "tsx",
+    "start": "node dist/js-kernel/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "koffi": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "cpy-cli": "^7.0.0",
+    "tsc-alias": "^1.8.17",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  }
+}
