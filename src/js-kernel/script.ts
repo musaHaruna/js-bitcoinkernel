@@ -1,4 +1,12 @@
+import { 
+    btck_script_pubkey_copy, 
+    btck_script_pubkey_create, 
+    btck_script_pubkey_destroy, 
+    btck_script_pubkey_to_bytes
+} from "./ffi/bindings.js";
+import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import { KernelException } from "./util/exceptions.js";
+import { ByteWriter } from "./writer.js";
 /**
  * Script verification flags that may be composed with each other.
  *
@@ -64,5 +72,101 @@ export class ScriptVerifyException extends KernelException {
 
         // Corrects the prototype chain for custom Error types in JavaScript/TypeScript environments
         Object.setPrototypeOf(this, ScriptVerifyException.prototype);
+    }
+}
+
+/**
+ * A Bitcoin script defining spending conditions for a transaction output (scriptPubKey).
+ *
+ * This wrapper encapsulates an opaque pointer to a compiled or raw native Bitcoin script. 
+ * It contains the explicit consensus validation logic required to locked funds, which 
+ * must be evaluated alongside a spending transaction input's witness or signature script.
+ */
+export class ScriptPubkey extends KernelOpaquePtr {
+    protected static override destroyFn = btck_script_pubkey_destroy as (ptr: bigint) => void;
+
+    protected static override copyFn = btck_script_pubkey_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Wrap an existing native script public key pointer.
+     *
+     * @param ptr - The native pointer handle.
+     * @param ownsPtr - Whether this instance owns the lifetime of the pointer. Defaults to true.
+     * @param parent - The parent object holding this reference, if it's a borrowed view. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null);
+    /**
+     * Allocate a brand new native script public key structure from raw serialized bytes.
+     *
+     * @param data - The byte buffer containing the raw opcodes and script payload.
+     */
+    constructor(data: Uint8Array | Buffer);
+    /**
+     * Polymorphic implementation handling both direct pointer wrapping and native allocation from raw data.
+     *
+     * @throws {Error} If `btck_script_pubkey_create` is unavailable, or if the native 
+     * layer fails to allocate and returns an invalid null pointer handle.
+     */
+    constructor(arg1: bigint | Uint8Array | Buffer, arg2?: boolean, arg3: KernelOpaquePtr | null = null) {
+        if (arg1 instanceof Uint8Array || Buffer.isBuffer(arg1)) {
+            if (!btck_script_pubkey_create) {
+                throw new Error("btck_script_pubkey_create unavailable");
+            }
+            const ptr = btck_script_pubkey_create(arg1, BigInt(arg1.length)) as bigint;
+            if (ptr === 0n) {
+                throw new Error("Failed to create native ScriptPubkey");
+            }
+            super(ptr, true, null);
+        } else {
+            super(arg1, arg2 ?? true, arg3);
+        }
+    }
+
+    /**
+     * Serialize the script public key back into its raw binary format.
+     *
+     * @returns A Uint8Array containing the serialized script bytes.
+     * @throws {Error} If `btck_script_pubkey_to_bytes` is unavailable.
+     */
+    toBytes(): Uint8Array {
+        if (!btck_script_pubkey_to_bytes) {
+            throw new Error("btck_script_pubkey_to_bytes unavailable");
+        }
+
+        const writer = new ByteWriter();
+
+        return Uint8Array.from(
+            writer.write(
+                btck_script_pubkey_to_bytes,
+                this.getHandle(),
+            ),
+        );
+    }
+
+    /**
+     * Get the hexadecimal representation of the script payload.
+     *
+     * @returns The raw script opcodes and data serialized as a hex string.
+     */
+    toHex(): string {
+        return Buffer.from(this.toBytes()).toString("hex");
+    }
+
+    /**
+     * Return a string representation of the script pubkey.
+     *
+     * @returns The hex string representation of the script.
+     */
+    override toString(): string {
+        return this.toHex();
+    }
+
+    /**
+     * Create a copy of this ScriptPubkey instance.
+     *
+     * @returns A new instance pointing to a duplicated native handle.
+     */
+    override copy(): this {
+        return super.copy();
     }
 }
