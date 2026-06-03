@@ -18,10 +18,19 @@ import {
     btck_transaction_output_destroy,
     btck_transaction_output_get_amount,
     btck_transaction_output_get_script_pubkey,
+    btck_transaction_to_bytes,
+    btck_transaction_create,
+    btck_transaction_destroy,
+    btck_transaction_get_input_at,
+    btck_transaction_get_output_at,
+    btck_transaction_get_txid,
+    btck_transaction_get_locktime,
+    btck_transaction_copy,
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import { ScriptPubkey } from "./script.js";
+import { ByteWriter } from "./writer.js";
 
 /**
  * Identifier for a Bitcoin transaction (Txid).
@@ -368,6 +377,155 @@ export class TransactionOutput extends KernelOpaquePtr {
 
     /**
      * Create a copy of this TransactionOutput instance.
+     *
+     * @returns A new instance pointing to a duplicated native handle.
+     */
+    override copy(): this {
+        return super.copy();
+    }
+}
+
+/**
+ * High-level wrapper around a native Bitcoin transaction pointer.
+ *
+ * This class encapsulates a transaction object within the native Bitcoin kernel layer.
+ * It provides safe lifecycle management, conversion to/from standard consensus-serialized 
+ * binary formats, direct read access to transaction metadata (like `locktime` and `txid`), 
+ * and lazy-loaded collections of its inner components (`inputs` and `outputs`).
+ */
+export class Transaction extends KernelOpaquePtr {
+    protected static override destroyFn = btck_transaction_destroy as (ptr: bigint) => void;
+    protected static override copyFn = btck_transaction_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Wrap an existing native transaction pointer.
+     *
+     * @param ptr - The native pointer handle.
+     * @param ownsPtr - Whether this instance owns the lifetime of the pointer. Defaults to true.
+     * @param parent - The parent object holding this reference, if it's a borrowed view. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null);
+    /**
+     * Parse a brand new native transaction instance from raw consensus-serialized bytes.
+     *
+     * @param data - The byte buffer containing the transaction serialized in raw Bitcoin consensus network format.
+     */
+    constructor(data: Uint8Array | Buffer);
+    /**
+     * Polymorphic implementation handling both direct pointer wrapping and native consensus parsing.
+     *
+     * @throws {Error} If `btck_transaction_create` is unavailable, or if the native 
+     * layer fails to parse the provided buffer and returns an invalid null pointer handle.
+     */
+    constructor(arg1: bigint | Uint8Array | Buffer, arg2?: boolean, arg3: KernelOpaquePtr | null = null) {
+        if (arg1 instanceof Uint8Array || Buffer.isBuffer(arg1)) {
+            if (!btck_transaction_create) {
+                throw new Error("btck_transaction_create unavailable");
+            }
+            const ptr = btck_transaction_create(arg1, BigInt(arg1.length)) as bigint;
+            if (ptr === 0n) {
+                throw new Error("Failed to parse native Transaction data");
+            }
+            super(ptr, true, null);
+        } else {
+            super(arg1, arg2 ?? true, arg3);
+        }
+    }
+
+    /**
+     * Retrieve the transaction input at a specific zero-based index as a raw pointer view.
+     *
+     * @param index - The positional index of the requested input.
+     * @returns A TransactionInput instance configured as a non-owning dependent memory view.
+     * @throws {Error} If `btck_transaction_get_input_at` is unavailable, or if the index is out of bounds.
+     */
+    protected getInputAt(index: number): TransactionInput {
+        if (!btck_transaction_get_input_at) {
+            throw new Error("btck_transaction_get_input_at unavailable");
+        }
+        const ptr = btck_transaction_get_input_at(this.getHandle(), BigInt(index)) as bigint;
+        if (ptr === 0n) {
+            throw new Error(`Failed to retrieve TransactionInput at index ${index}`);
+        }
+        return new TransactionInput(ptr, false, this);
+    }
+
+    /**
+     * Retrieve the transaction output at a specific zero-based index as a raw pointer view.
+     *
+     * @param index - The positional index of the requested output.
+     * @returns A TransactionOutput instance configured as a non-owning dependent memory view.
+     * @throws {Error} If `btck_transaction_get_output_at` is unavailable, or if the index is out of bounds.
+     */
+    protected getOutputAt(index: number): TransactionOutput {
+        if (!btck_transaction_get_output_at) {
+            throw new Error("btck_transaction_get_output_at unavailable");
+        }
+        const ptr = btck_transaction_get_output_at(this.getHandle(), BigInt(index)) as bigint;
+        if (ptr === 0n) {
+            throw new Error(`Failed to retrieve TransactionOutput at index ${index}`);
+        }
+        return new TransactionOutput(ptr, false, this);
+    }
+
+    /**
+     * The unique transaction identifier (Txid).
+     *
+     * @returns The computed Txid object instance, instantiated as a dependent non-owning view 
+     * tied directly to the lifecycle of this transaction wrapper.
+     * @throws {Error} If `btck_transaction_get_txid` is unavailable, or if the native 
+     * layer returns an invalid null pointer handle.
+     */
+    get txid(): Txid {
+        if (!btck_transaction_get_txid) {
+            throw new Error("btck_transaction_get_txid unavailable");
+        }
+        const ptr = btck_transaction_get_txid(this.getHandle()) as bigint;
+        if (ptr === 0n) {
+            throw new Error("Failed to get Txid pointer from Transaction");
+        }
+        return new Txid(ptr, false, this);
+    }
+
+    /**
+     * The absolute or relative locktime threshold (`nLockTime`) value of this transaction.
+     *
+     * Depending on consensus rules, this value dictates the earliest block height or 
+     * Unix timestamp threshold below which the transaction cannot be mined into the blockchain.
+     *
+     * @returns The 32-bit unsigned integer locktime configuration value.
+     * @throws {Error} If `btck_transaction_get_locktime` is unavailable.
+     */
+    get locktime(): number {
+        if (!btck_transaction_get_locktime) {
+            throw new Error("btck_transaction_get_locktime unavailable");
+        }
+        return Number(btck_transaction_get_locktime(this.getHandle()));
+    }
+
+    /**
+     * Serialize the transaction structure back into raw binary bytes.
+     *
+     * @returns A Uint8Array containing the serialized transaction in standard Bitcoin consensus network format.
+     * @throws {Error} If `btck_transaction_to_bytes` is unavailable or the underlying stream breaks.
+     */
+    toBytes(): Uint8Array {
+        if (!btck_transaction_to_bytes) {
+            throw new Error("btck_transaction_to_bytes unavailable");
+        }
+
+        const writer = new ByteWriter();
+
+        return Uint8Array.from(
+            writer.write(
+                btck_transaction_to_bytes,
+                this.getHandle(),
+            ),
+        );
+    }
+
+    /**
+     * Create a copy of this Transaction instance.
      *
      * @returns A new instance pointing to a duplicated native handle.
      */
