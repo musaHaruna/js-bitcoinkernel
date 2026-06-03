@@ -1,6 +1,7 @@
 /**
  * Constructor type for classes extending KernelOpaquePtr.
- * Provides optional native creation function binding.
+ * * Provides structural definition for subclasses, including optional native 
+ * creation function binding.
  */
 export type KernelOpaquePtrConstructor<T extends KernelOpaquePtr> = { 
     new (ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null): T;
@@ -9,24 +10,24 @@ export type KernelOpaquePtrConstructor<T extends KernelOpaquePtr> = {
 };
 
 /**
- * Base class for opaque native pointer wrappers for managing opaque pointers returned from a native Bitcoin kernel (C) layer.
+ * Base class for opaque native pointer wrappers.
  *
- * This class manages ownership of a native pointer (`bigint`) and provides
- * lifecycle utilities such as creation, copying, detaching, and disposal.
+ * Manages the lifecycle of opaque pointers returned from a native Bitcoin kernel (C) layer.
+ * It handles pointer ownership, deep duplication, view referencing, and automated or explicit disposal.
  *
  * Subclasses are expected to bind native functions:
- * - createFn: allocate native resource
- * - destroyFn: free native resource
- * - copyFn: duplicate native resource
+ * - `createFn`: allocate native resource
+ * - `destroyFn`: free native resource
+ * - `copyFn`: duplicate native resource
  */
 export abstract class KernelOpaquePtr {
-    /** Native pointer handle */
+    /** Native pointer handle. Nullified once disposed. */
     protected ptr: bigint | null;
     
-    /** Whether this instance owns the pointer and is responsible for freeing it */
+    /** Whether this instance owns the pointer and is responsible for freeing it. */
     protected ownsPtr: boolean;
     
-    /** Optional parent object to keep ownership chain alive */
+    /** Optional parent object to keep the parent ownership chain alive in memory. */
     protected parent: KernelOpaquePtr | null;
     
     protected static createFn?: (...args: any[]) => bigint;
@@ -34,9 +35,12 @@ export abstract class KernelOpaquePtr {
     protected static copyFn?: (ptr: bigint) => bigint;
 
     /**
-     * @param ptr Native pointer value
-     * @param ownsPtr Whether this instance owns the pointer
-     * @param parent Optional parent owner to prevent premature GC/freeing
+     * Initialize the native pointer wrapper.
+     *
+     * @param ptr - Native pointer value.
+     * @param ownsPtr - Whether this instance owns the pointer. Defaults to true.
+     * @param parent - Optional parent owner to prevent premature garbage collection or freeing. Defaults to null.
+     * @throws {Error} If the provided pointer is null or evaluation evaluates to 0n.
      */
     protected constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
         if (!ptr) {
@@ -49,7 +53,12 @@ export abstract class KernelOpaquePtr {
     }
 
     /**
-     * Create a new owned native instance using the bound create function.
+     * Create a new owned native instance using the bound native creation function.
+     *
+     * @param args - Variable arguments passed directly to the underlying creation function.
+     * @returns A new instance of the subclass containing the allocated pointer.
+     * @throws {TypeError} If the subclass cannot be instantiated directly due to a missing `createFn`.
+     * @throws {Error} If the native creation layer fails to allocate and returns a null pointer handle.
      */
     static create<T extends KernelOpaquePtr>(this: KernelOpaquePtrConstructor<T>, ...args: unknown[]): T {
         if (!this.createFn) {
@@ -67,6 +76,9 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Wrap an existing native pointer as an owned handle.
+     *
+     * @param ptr - The native pointer handle to wrap.
+     * @returns A new instance of the subclass that assumes ownership of the pointer.
      */
     static fromHandle<T extends KernelOpaquePtr>(this: new (ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null) => T, ptr: bigint): T {
         return new this(ptr, true);
@@ -74,7 +86,11 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Wrap an existing native pointer as a non-owning view.
-     * Useful when referencing memory owned elsewhere.
+     * * Useful when referencing memory managed or owned elsewhere in the system.
+     *
+     * @param ptr - The native pointer handle to wrap.
+     * @param parent - Optional parent object that actually owns the underlying memory space.
+     * @returns A new non-owning view instance of the subclass.
      */
     static fromView<T extends KernelOpaquePtr>(this: new (ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null) => T, ptr: bigint, parent?: KernelOpaquePtr): T {
         return new this(ptr, false, parent ?? null);
@@ -82,6 +98,9 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Free native resources if this instance owns the pointer.
+     * * Clears internal pointer handles and references to prevent use-after-free scenarios.
+     *
+     * @throws {Error} If the instance owns a valid pointer but the subclass has not implemented `destroyFn`.
      */
     dispose(): void {
         if (!this.ptr || !this.ownsPtr) {
@@ -101,6 +120,10 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Create a deep independent copy of this native object.
+     *
+     * @returns A new owned instance pointing to a duplicated native handle.
+     * @throws {TypeError} If the subclass does not implement a native `copyFn`.
+     * @throws {Error} If attempting to copy an object that has already been disposed.
      */
     copy(): this {
         const ctor = this.constructor as typeof KernelOpaquePtr;
@@ -118,7 +141,13 @@ export abstract class KernelOpaquePtr {
     }
 
     /**
-     * Convert a borrowed view into an owned instance by copying native data.
+     * Convert a borrowed view into an owned instance by copying its native data.
+     * * If the instance already owns its pointer, this operation performs no action.
+     * Otherwise, it allocates new native memory, copies the contents, and cuts ties with the parent view.
+     *
+     * @returns The instance itself, now modified to own its isolated pointer.
+     * @throws {TypeError} If the subclass does not implement a native `copyFn`.
+     * @throws {Error} If attempting to detach an object that has already been disposed.
      */
     detach(): this {
         if (this.ownsPtr) {
@@ -146,6 +175,8 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Check whether this object has been disposed.
+     *
+     * @returns True if the native resource has been freed, false otherwise.
      */
     isDisposed(): boolean {
         return this.ptr === null;
@@ -153,6 +184,9 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Internal accessor for the native handle.
+     *
+     * @returns The active native pointer bigint value.
+     * @throws {Error} If attempting to access the handle after the object has been disposed.
      */
     protected getHandle(): bigint {
         if (!this.ptr) {
@@ -164,6 +198,7 @@ export abstract class KernelOpaquePtr {
 
     /**
      * Support for explicit resource cleanup.
+     * * Hooks directly into modern JavaScript runtime resource management (`using` blocks).
      */
     [Symbol.dispose](): void {
         this.dispose();
