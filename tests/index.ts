@@ -9,3 +9,6 @@ import "./test-loader.js";
 
 // Run BlockHash test
 import "./test-block.js";
+
+// Run Notifications test
+import "./test-notifications.js";
