@@ -18,3 +18,6 @@ import "./util/test-sequence.js";
 
 // Run Script tests
 import "./test-script.js";
+
+// Run Transaction tests
+import "./test-transaction.js";
