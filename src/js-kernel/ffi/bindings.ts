@@ -39,8 +39,11 @@ koffi.opaque('struct_btck_TransactionSpentOutputs');
 
 export const WriteBytesCb = koffi.proto("WriteBytesCb", int32_t, ["const void *", uint64_t, "void *"]);
 
+/**=========================================================
+ * Block Bindings
+ *==========================================================/
 /**
- * Block Hash Bindings
+ * BlockHash 
  */
 export const btck_block_hash_create = loadOptional('btck_block_hash_create', () => 
     lib.func('btck_block_hash_create', 'struct_btck_BlockHash*', [koffi.pointer(ByteArray32)])
@@ -63,7 +66,7 @@ export const btck_block_hash_destroy = loadOptional('btck_block_hash_destroy', (
 );
 
 /**
- * Block Header Bindings
+ * BlockHeader
  */
 export const btck_block_header_create = loadOptional('btck_block_header_create', () =>
     lib.func('btck_block_header_create', 'struct_btck_BlockHeader*', ['void*', size_t])
