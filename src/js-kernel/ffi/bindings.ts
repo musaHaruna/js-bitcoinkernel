@@ -23,6 +23,7 @@ const uint32_t = 'uint32';
 const int32_t = 'int32';
 const int64_t = "int64";
 const uint64_t = "uint64";
+const btck_ScriptVerificationFlags = 'uint32';
 
 const ByteArray32 = koffi.array('uint8', 32);
 const ByteArray80 = koffi.array('uint8', 80);
@@ -36,6 +37,7 @@ koffi.opaque('struct_btck_TransactionOutput');
 koffi.opaque('struct_btck_TransactionOutPoint');
 koffi.opaque('struct_btck_TransactionInput');
 koffi.opaque('struct_btck_TransactionSpentOutputs');
+koffi.opaque('struct_btck_ScriptPubkey');
 
 export const WriteBytesCb = koffi.proto("WriteBytesCb", int32_t, ["const void *", uint64_t, "void *"]);
 
@@ -278,4 +280,27 @@ export const btck_coin_get_output = loadOptional('btck_coin_get_output', () =>
 
 export const btck_coin_destroy = loadOptional('btck_coin_destroy', () =>
     lib.func('btck_coin_destroy', 'void', ['struct_btck_Coin*'])
+);
+
+/**==========================================================
+ * ScriptPubkey Bindings
+ *===========================================================*/
+export const btck_script_pubkey_create = loadOptional('btck_script_pubkey_create', () =>
+    lib.func('btck_script_pubkey_create', 'struct_btck_ScriptPubkey*', ['void*', size_t])
+);
+
+export const btck_script_pubkey_copy = loadOptional('btck_script_pubkey_copy', () =>
+    lib.func('btck_script_pubkey_copy', 'struct_btck_ScriptPubkey*', ['struct_btck_ScriptPubkey*'])
+);
+
+export const btck_script_pubkey_verify = loadOptional('btck_script_pubkey_verify', () =>
+    lib.func('btck_script_pubkey_verify', int32_t, ['struct_btck_ScriptPubkey*', int64_t,'struct_btck_Transaction*', 'struct_btck_PrecomputedTransactionData*', uint32_t, btck_ScriptVerificationFlags, 'uint8*'])
+);
+
+export const btck_script_pubkey_to_bytes = loadOptional('btck_script_pubkey_to_bytes', () =>
+    lib.func('btck_script_pubkey_to_bytes', int32_t, ['struct_btck_ScriptPubkey*', koffi.pointer(WriteBytesCb),'void*'])
+);
+
+export const btck_script_pubkey_destroy = loadOptional('btck_script_pubkey_destroy', () =>
+    lib.func('btck_script_pubkey_destroy', 'void', ['struct_btck_ScriptPubkey*'])
 );
