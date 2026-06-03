@@ -254,3 +254,28 @@ export const btck_transaction_input_get_sequence = loadOptional('btck_transactio
 export const btck_transaction_input_destroy = loadOptional('btck_transaction_input_destroy', () =>
     lib.func('btck_transaction_input_destroy', 'void', ['struct_btck_TransactionInput*'])
 );
+
+
+/**=========================================================
+ * Coins Bindings
+ *==========================================================*/
+
+export const btck_coin_copy = loadOptional('btck_coin_copy', () =>
+    lib.func('btck_coin_copy', 'struct_btck_Coin*', ['struct_btck_Coin*'])
+);
+
+export const btck_coin_confirmation_height = loadOptional('btck_coin_confirmation_height', () =>
+    lib.func('btck_coin_confirmation_height', uint32_t, ['struct_btck_Coin*'])
+);
+
+export const btck_coin_is_coinbase = loadOptional('btck_coin_is_coinbase', () =>
+    lib.func('btck_coin_is_coinbase', int32_t, ['struct_btck_Coin*'])
+);
+
+export const btck_coin_get_output = loadOptional('btck_coin_get_output', () =>
+    lib.func('btck_coin_get_output', 'struct_btck_TransactionOutput*', ['struct_btck_Coin*'])
+);
+
+export const btck_coin_destroy = loadOptional('btck_coin_destroy', () =>
+    lib.func('btck_coin_destroy', 'void', ['struct_btck_Coin*'])
+);
