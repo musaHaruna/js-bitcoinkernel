@@ -1,4 +1,4 @@
-
+import { KernelException } from "./util/exceptions.js";
 /**
  * Script verification flags that may be composed with each other.
  *
@@ -35,4 +35,34 @@ export enum ScriptVerifyStatus {
     OK = 0, // Verification succeeded
     ERROR_INVALID_FLAGS_COMBINATION = 1, // The verification flags were combined in an invalid way 
     ERROR_SPENT_OUTPUTS_REQUIRED = 2 // The taproot flag requires valid spent outputs to be provided 
+}
+
+/**
+ * Exception thrown when Bitcoin script verification fails.
+ *
+ * This exception is typically raised by the `ScriptPubkey.verify` function when a script
+ * evaluates to invalid or fails to pass consensus validation rules. It captures a specific
+ * status code detailing the exact programmatic reason for the verification failure.
+ */
+export class ScriptVerifyException extends KernelException {
+    /**
+     * The evaluation status code indicating the specific failure reason.
+     */
+    public readonly status: ScriptVerifyStatus;
+
+    /**
+     * Create a new script verification exception.
+     *
+     * @param status - The verification status code representing the evaluation error.
+     */
+    constructor(status: ScriptVerifyStatus) {
+        // Resolve the enum string name using TypeScript's reverse mapping feature
+        const statusName = ScriptVerifyStatus[status] || `UNKNOWN_STATUS_${status}`;
+        
+        super(`Script verification failed: ${statusName}`);
+        this.status = status;
+
+        // Corrects the prototype chain for custom Error types in JavaScript/TypeScript environments
+        Object.setPrototypeOf(this, ScriptVerifyException.prototype);
+    }
 }
