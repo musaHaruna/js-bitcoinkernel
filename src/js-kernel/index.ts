@@ -11,6 +11,7 @@
  */
 
 export { BlockHash, BlockHeader } from "./block.js";
+export { NotificationInterfaceCallbacks } from "./notifications.js";
 
 /**
  * If you later add more high-level primitives, expose them here:
