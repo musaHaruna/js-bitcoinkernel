@@ -92,8 +92,8 @@ export abstract class KernelOpaquePtr {
      * @param parent - Optional parent object that actually owns the underlying memory space.
      * @returns A new non-owning view instance of the subclass.
      */
-    static fromView<T extends KernelOpaquePtr>(this: new (ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null) => T, ptr: bigint, parent?: KernelOpaquePtr): T {
-        return new this(ptr, false, parent ?? null);
+    static fromView<T extends KernelOpaquePtr>(this: new (ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null) => T, ptr: bigint, parent: KernelOpaquePtr | null = null): T {
+        return new this(ptr, false, parent);
     }
 
     /**
