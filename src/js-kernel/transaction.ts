@@ -8,6 +8,11 @@ import {
     btck_transaction_out_point_destroy,
     btck_transaction_out_point_get_index,
     btck_transaction_out_point_get_txid,
+
+    btck_transaction_input_copy,
+    btck_transaction_input_destroy,
+    btck_transaction_input_get_out_point,
+    btck_transaction_input_get_sequence,
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
@@ -167,6 +172,91 @@ export class TransactionOutPoint extends KernelOpaquePtr {
 
     /**
      * Create a copy of this TransactionOutPoint instance.
+     *
+     * @returns A new instance pointing to a duplicated native handle.
+     */
+    override copy(): this {
+        return super.copy();
+    }
+}
+
+/**
+ * Input to a Bitcoin transaction that spends a historical transaction output.
+ *
+ * A transaction input (TxIn) spends an existing Unspent Transaction Output (UTXO) 
+ * by referencing it through an explicit `TransactionOutPoint`. It contains the 
+ * validation criteria (and sequence rules) required to successfully claim those funds.
+ *
+ * * @note TransactionInput instances cannot be directly constructed via the public API. 
+ * They are obtained downstream from Transaction objects.
+ */
+export class TransactionInput extends KernelOpaquePtr {
+    protected static override destroyFn = btck_transaction_input_destroy as (ptr: bigint) => void;
+
+    protected static override copyFn = btck_transaction_input_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Create a TransactionInput instance wrapping a native pointer.
+     *
+     * @param ptr - The native pointer handle.
+     * @param ownsPtr - Whether this instance owns the lifetime of the pointer. Defaults to true.
+     * @param parent - The parent object holding this reference, if it's a borrowed view. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+        super(ptr, ownsPtr, parent);
+    }
+
+    /**
+     * The outpoint being spent by this input.
+     *
+     * @returns The TransactionOutPoint referencing the targeted previous output, 
+     * instantiated as a dependent non-owning view tied to the lifecycle of this input.
+     * @throws {Error} If btck_transaction_input_get_out_point is unavailable, or if the native 
+     * layer returns an invalid null pointer handle.
+     */
+    get outPoint(): TransactionOutPoint {
+        if (!btck_transaction_input_get_out_point) {
+            throw new Error("btck_transaction_input_get_out_point unavailable");
+        }
+
+        const ptr = btck_transaction_input_get_out_point(this.getHandle()) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error("Failed to get TransactionOutPoint pointer from TransactionInput");
+        }
+
+        // Instantiated as a dependent view layout: ownsPtr = false, parent = this
+        return new TransactionOutPoint(ptr, false, this);
+    }
+
+    /**
+     * The sequence number (nSequence) of this input.
+     *
+     * This field is typically applied to signal transaction opt-in Replace-By-Fee (RBF), 
+     * handle relative locktimes (BIP 68), or disable absolute locktimes.
+     *
+     * @returns The 32-bit unsigned integer sequence value.
+     * @throws {Error} If btck_transaction_input_get_sequence is unavailable.
+     */
+    get sequence(): number {
+        if (!btck_transaction_input_get_sequence) {
+            throw new Error("btck_transaction_input_get_sequence unavailable");
+        }
+
+        return btck_transaction_input_get_sequence(this.getHandle());
+    }
+
+    /**
+     * Return a string representation of the transaction input.
+     *
+     * @returns A string representing the underlying outpoint spent by this input.
+     */
+    override toString(): string {
+        return `${this.outPoint.toString()}`;
+    }
+
+    /**
+     * Create a copy of this TransactionInput instance.
      *
      * @returns A new instance pointing to a duplicated native handle.
      */
