@@ -33,11 +33,20 @@ const ByteArray80 = koffi.array('uint8', 80);
  */
 koffi.opaque('struct_btck_BlockHash');
 koffi.opaque('struct_btck_BlockHeader');
+koffi.opaque('struct_btck_ChainParameters');
+koffi.opaque('struct_btck_ConsensusParams');
+koffi.opaque('struct_btck_ContextOptions');
+koffi.opaque('struct_btck_Context');
+koffi.opaque('struct_btck_BlockTreeEntry');
+koffi.opaque('struct_btck_Txid');
+koffi.opaque('struct_btck_ScriptPubkey');
+koffi.opaque('struct_btck_Transaction');
 koffi.opaque('struct_btck_TransactionOutput');
 koffi.opaque('struct_btck_TransactionOutPoint');
 koffi.opaque('struct_btck_TransactionInput');
 koffi.opaque('struct_btck_TransactionSpentOutputs');
-koffi.opaque('struct_btck_ScriptPubkey');
+koffi.opaque('struct_btck_Coin');
+koffi.opaque('struct_btck_PrecomputedTransactionData');
 
 export const WriteBytesCb = koffi.proto("WriteBytesCb", int32_t, ["const void *", uint64_t, "void *"]);
 

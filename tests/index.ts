@@ -12,3 +12,6 @@ import "./test-block.js";
 
 // Run Notifications test
 import "./test-notifications.js";
+
+// Run LazySequence tests
+import "./util/test-sequence.js";
