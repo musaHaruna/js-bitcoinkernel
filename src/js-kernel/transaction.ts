@@ -26,11 +26,14 @@ import {
     btck_transaction_get_txid,
     btck_transaction_get_locktime,
     btck_transaction_copy,
+    btck_transaction_count_inputs,
+    btck_transaction_count_outputs,
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import { ScriptPubkey } from "./script.js";
 import { ByteWriter } from "./writer.js";
+import { LazySequence } from "./util/sequence.js";
 
 /**
  * Identifier for a Bitcoin transaction (Txid).
@@ -386,6 +389,149 @@ export class TransactionOutput extends KernelOpaquePtr {
 }
 
 /**
+ * A lazily-evaluated sequence view over a transaction's inputs.
+ *
+ * This collection provides random indexed access to individual transaction inputs by 
+ * fetching records from the native memory array layout on-demand. It acts as an array-like 
+ * window that caches its computed total element length on first access to drastically 
+ * minimize FFI boundary crossing overhead during sequential loops or structural evaluation.
+ */
+export class TransactionInputSequence extends LazySequence<TransactionInput> {
+    /** * The underlying parent transaction holding the native array handle. */
+    private readonly _transaction: Transaction;
+    /** * Memoized sequence length storage to avoid redundant C API lookups. */
+    private _cachedLen?: number;
+
+    /**
+     * Create a sequence view of transaction inputs.
+     * * @param transaction - The parent transaction containing the input vector under evaluation.
+     */
+    constructor(transaction: Transaction) {
+        super();
+        this._transaction = transaction;
+    }
+
+    /**
+     * The total number of inputs embedded within the transaction.
+     * * The result is requested from the native kernel boundary on the first call 
+     * and cached internally for subsequent evaluations.
+     *
+     * @returns The evaluated input array size.
+     * @throws {Error} If `btck_transaction_count_inputs` is unavailable.
+     */
+    override get length(): number {
+        if (this._cachedLen === undefined) {
+            if (!btck_transaction_count_inputs) {
+                throw new Error("btck_transaction_count_inputs unavailable");
+            }
+            
+            // Bypass protected restriction to grab the parent tx handle
+            const txHandle = (this._transaction as any).getHandle();
+            const count = btck_transaction_count_inputs(txHandle);
+            
+            this._cachedLen = Number(count);
+        }
+        return this._cachedLen;
+    }
+
+    /**
+     * Fetch a transaction input at a specific normalized offset index.
+     *
+     * @param index - The non-negative, zero-based sequence position to evaluate.
+     * @returns A TransactionInput instance configured as a non-owning memory view linked 
+     * directly to the parent transaction lifecycle to safely ground the garbage collector.
+     * @throws {Error} If `btck_transaction_get_input_at` is unavailable, or if the native 
+     * pointer extraction fails.
+     */
+    protected override getItem(index: number): TransactionInput {
+        if (!btck_transaction_get_input_at) {
+            throw new Error("btck_transaction_get_input_at unavailable");
+        }
+
+        const txHandle = (this._transaction as any).getHandle();
+        const ptr = btck_transaction_get_input_at(txHandle, BigInt(index)) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error(`Failed to retrieve TransactionInput at index ${index}`);
+        }
+
+        // Return as a non-owning memory view linked to the parent transaction lifecycle
+        return new TransactionInput(ptr, false, this._transaction);
+    }
+}
+
+/**
+ * A lazily-evaluated sequence view over a transaction's outputs.
+ *
+ * This collection provides random indexed access to individual transaction outputs by 
+ * fetching records from the native memory array layout on-demand. It acts as an array-like 
+ * window that caches its computed total element length on first access to drastically 
+ * minimize FFI boundary crossing overhead during sequential loops or structural evaluation.
+ */
+export class TransactionOutputSequence extends LazySequence<TransactionOutput> {
+    /** * The underlying parent transaction holding the native array handle. */
+    private readonly _transaction: Transaction;
+    /** * Memoized sequence length storage to avoid redundant C API lookups. */
+    private _cachedLen?: number;
+
+    /**
+     * Create a sequence view of transaction outputs.
+     * * @param transaction - The parent transaction containing the output vector under evaluation.
+     */
+    constructor(transaction: Transaction) {
+        super();
+        this._transaction = transaction;
+    }
+
+    /**
+     * The total number of outputs embedded within the transaction.
+     * * The result is requested from the native kernel boundary on the first call 
+     * and cached internally for subsequent evaluations.
+     *
+     * @returns The evaluated output array size.
+     * @throws {Error} If `btck_transaction_count_outputs` is unavailable.
+     */
+    override get length(): number {
+        if (this._cachedLen === undefined) {
+            if (!btck_transaction_count_outputs) {
+                throw new Error("btck_transaction_count_outputs unavailable");
+            }
+
+            const txHandle = (this._transaction as any).getHandle();
+            const count = btck_transaction_count_outputs(txHandle);
+
+            this._cachedLen = Number(count);
+        }
+        return this._cachedLen;
+    }
+
+    /**
+     * Fetch a transaction output at a specific normalized offset index.
+     *
+     * @param index - The non-negative, zero-based sequence position to evaluate.
+     * @returns A TransactionOutput instance configured as a non-owning memory view linked 
+     * directly to the parent transaction lifecycle to safely ground the garbage collector.
+     * @throws {Error} If `btck_transaction_get_output_at` is unavailable, or if the native 
+     * pointer extraction fails.
+     */
+    protected override getItem(index: number): TransactionOutput {
+        if (!btck_transaction_get_output_at) {
+            throw new Error("btck_transaction_get_output_at unavailable");
+        }
+
+        const txHandle = (this._transaction as any).getHandle();
+        const ptr = btck_transaction_get_output_at(txHandle, BigInt(index)) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error(`Failed to retrieve TransactionOutput at index ${index}`);
+        }
+
+        // Return as a non-owning memory view linked to the parent transaction lifecycle
+        return new TransactionOutput(ptr, false, this._transaction);
+    }
+}
+
+/**
  * High-level wrapper around a native Bitcoin transaction pointer.
  *
  * This class encapsulates a transaction object within the native Bitcoin kernel layer.
@@ -469,6 +615,26 @@ export class Transaction extends KernelOpaquePtr {
     }
 
     /**
+     * All inputs associated with this transaction.
+     *
+     * @returns A lazy sequence view over the native inputs array, minimizing memory overhead 
+     * by fetching individual records from native memory only when evaluated.
+     */
+    get inputs(): TransactionInputSequence {
+        return new TransactionInputSequence(this);
+    }
+
+    /**
+     * All outputs associated with this transaction.
+     *
+     * @returns A lazy sequence view over the native outputs array, minimizing memory overhead 
+     * by fetching individual records from native memory only when evaluated.
+     */
+    get outputs(): TransactionOutputSequence {
+        return new TransactionOutputSequence(this);
+    }
+
+    /**
      * The unique transaction identifier (Txid).
      *
      * @returns The computed Txid object instance, instantiated as a dependent non-owning view 
@@ -522,6 +688,16 @@ export class Transaction extends KernelOpaquePtr {
                 this.getHandle(),
             ),
         );
+    }
+
+    /**
+     * Return a string representation of the transaction properties.
+     *
+     * @returns A diagnostic string listing the big-endian hexadecimal Txid hash string, 
+     * alongside the aggregate counts of inputs and outputs.
+     */
+    override toString(): string {
+        return `txid=${this.txid.toString()} ins=${this.inputs.length} outs=${this.outputs.length}`;
     }
 
     /**
