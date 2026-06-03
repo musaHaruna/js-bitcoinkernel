@@ -15,3 +15,6 @@ import "./test-notifications.js";
 
 // Run LazySequence tests
 import "./util/test-sequence.js";
+
+// Run Script tests
+import "./test-script.js";
