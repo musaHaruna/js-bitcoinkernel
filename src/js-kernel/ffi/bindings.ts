@@ -313,3 +313,18 @@ export const btck_script_pubkey_to_bytes = loadOptional('btck_script_pubkey_to_b
 export const btck_script_pubkey_destroy = loadOptional('btck_script_pubkey_destroy', () =>
     lib.func('btck_script_pubkey_destroy', 'void', ['struct_btck_ScriptPubkey*'])
 );
+
+/**===========================================================
+ * PrecomputedTransactionData Bindings
+*============================================================*/
+export const btck_precomputed_transaction_data_create = loadOptional('btck_precomputed_transaction_data_create', () =>
+    lib.func('btck_precomputed_transaction_data_create', 'struct_btck_PrecomputedTransactionData*', ['struct_btck_Transaction*', 'struct_btck_TransactionOutput**', size_t])
+);
+
+export const btck_precomputed_transaction_data_copy = loadOptional('btck_precomputed_transaction_data_copy', () =>
+    lib.func('btck_precomputed_transaction_data_copy', 'struct_btck_PrecomputedTransactionData*', ['struct_btck_PrecomputedTransactionData*'])
+);
+
+export const btck_precomputed_transaction_data_destroy = loadOptional('btck_precomputed_transaction_data_destroy', () =>
+    lib.func('btck_precomputed_transaction_data_destroy', 'void', ['struct_btck_PrecomputedTransactionData*'])
+);
