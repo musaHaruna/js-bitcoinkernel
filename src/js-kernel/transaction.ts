@@ -3,6 +3,11 @@ import {
     btck_txid_destroy,
     btck_txid_equals,
     btck_txid_to_bytes,
+
+    btck_transaction_out_point_copy,
+    btck_transaction_out_point_destroy,
+    btck_transaction_out_point_get_index,
+    btck_transaction_out_point_get_txid,
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
@@ -80,6 +85,88 @@ export class Txid extends KernelOpaquePtr {
 
     /**
      * Create a copy of this Txid instance.
+     *
+     * @returns A new instance pointing to a duplicated native handle.
+     */
+    override copy(): this {
+        return super.copy();
+    }
+}
+
+/**
+ * Reference to a specific output of a Bitcoin transaction.
+ *
+ * A transaction outpoint uniquely identifies a UTXO (Unspent Transaction Output) or 
+ * spent output by combining a 32-byte transaction ID (Txid) with a specific output index. 
+ * This sequence is heavily utilized inside transaction inputs to prove which historical 
+ * outputs are being claimed and spent.
+ * * * @note TransactionOutPoint instances cannot be directly constructed via the public API. 
+ * They are obtained downstream from TransactionInput objects.
+ */
+export class TransactionOutPoint extends KernelOpaquePtr {
+    protected static override destroyFn = btck_transaction_out_point_destroy as (ptr: bigint) => void;
+
+    protected static override copyFn = btck_transaction_out_point_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Create a TransactionOutPoint instance wrapping a native pointer.
+     *
+     * @param ptr - The native pointer handle.
+     * @param ownsPtr - Whether this instance owns the lifetime of the pointer. Defaults to true.
+     * @param parent - The parent object holding this reference, if it's a borrowed view. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+        super(ptr, ownsPtr, parent);
+    }
+
+    /**
+     * The output index within the transaction.
+     *
+     * @returns The zero-based output position (often referred to as `vout`).
+     * @throws {Error} If btck_transaction_out_point_get_index is unavailable.
+     */
+    get index(): number {
+        if (!btck_transaction_out_point_get_index) {
+            throw new Error("btck_transaction_out_point_get_index unavailable");
+        }
+
+        return btck_transaction_out_point_get_index(this.getHandle());
+    }
+
+    /**
+     * The transaction ID being referenced.
+     *
+     * @returns The Txid of the transaction containing the output, instantiated 
+     * as a dependent non-owning view tied to the lifecycle of this outpoint.
+     * @throws {Error} If btck_transaction_out_point_get_txid is unavailable, or if the native 
+     * layer returns an invalid null pointer handle.
+     */
+    get txid(): Txid {
+        if (!btck_transaction_out_point_get_txid) {
+            throw new Error("btck_transaction_out_point_get_txid unavailable");
+        }
+
+        const ptr = btck_transaction_out_point_get_txid(this.getHandle()) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error("Failed to get Txid pointer from TransactionOutPoint");
+        }
+
+        // Instantiated as a dependent view layout: ownsPtr = false, parent = this
+        return new Txid(ptr, false, this);
+    }
+
+    /**
+     * Return a string representation of the transaction outpoint.
+     *
+     * @returns A descriptive string showing the serialized Txid and output index.
+     */
+    override toString(): string {
+        return `txid=${this.txid.toString()} index=${this.index}`;
+    }
+
+    /**
+     * Create a copy of this TransactionOutPoint instance.
      *
      * @returns A new instance pointing to a duplicated native handle.
      */
