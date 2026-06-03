@@ -2,11 +2,17 @@ import {
     btck_script_pubkey_copy, 
     btck_script_pubkey_create, 
     btck_script_pubkey_destroy, 
-    btck_script_pubkey_to_bytes
+    btck_script_pubkey_to_bytes,
+
+    btck_precomputed_transaction_data_create,
+    btck_precomputed_transaction_data_copy,
+    btck_precomputed_transaction_data_destroy,
+    btck_script_pubkey_verify,
 } from "./ffi/bindings.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import { KernelException } from "./util/exceptions.js";
 import { ByteWriter } from "./writer.js";
+import { Transaction, TransactionOutput } from "./transaction.js";
 /**
  * Script verification flags that may be composed with each other.
  *
@@ -72,6 +78,76 @@ export class ScriptVerifyException extends KernelException {
 
         // Corrects the prototype chain for custom Error types in JavaScript/TypeScript environments
         Object.setPrototypeOf(this, ScriptVerifyException.prototype);
+    }
+}
+
+/**
+ * Reusable structure holding precomputed transaction hashing caches for script verification.
+ *
+ * This structure eliminates redundant SHA256 hashing calculations across multiple inputs 
+ * of the same transaction during parallel or sequential signature validation. By caching 
+ * intermediate sighash states (such as hashes of inputs, outputs, and amounts), it drops 
+ * verification complexity from a quadratic $O(N^2)$ scale down to linear $O(N)$ processing time.
+ * * @note This precomputed cache is strictly required when verifying Taproot (BIP341) inputs, 
+ * where spending scripts mandate a comprehensive sighash digest over the complete set of spent outputs.
+ */
+export class PrecomputedTransactionData extends KernelOpaquePtr {
+    protected static override destroyFn = btck_precomputed_transaction_data_destroy as (ptr: bigint) => void;
+
+    protected static override copyFn = btck_precomputed_transaction_data_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Create a precomputed transaction data cache instance for script verification.
+     *
+     * @param txTo - The transaction instance containing the input vector to precompute caches for.
+     * @param spentOutputs - An array of `TransactionOutput` structures matching the exact 
+     * UTXOs being spent by this transaction. **Required** for Taproot verification; can be passed 
+     * as `null` or an empty array if evaluating legacy or standard SegWit v0 inputs only.
+     * * @throws {Error} If `btck_precomputed_transaction_data_create` is unavailable, or if 
+     * the native kernel fails to instantiate the cache and returns an invalid null pointer handle.
+     */
+    constructor(txTo: Transaction, spentOutputs: TransactionOutput[] | null = null) {
+        if (!btck_precomputed_transaction_data_create) {
+            throw new Error("btck_precomputed_transaction_data_create unavailable");
+        }
+
+        let outputsPtr: BigUint64Array | null = null;
+        let outputsLen = 0n;
+
+        if (spentOutputs && spentOutputs.length > 0) {
+            outputsLen = BigInt(spentOutputs.length);
+            // Create a contiguous array of pointers (handles) for the native C side
+            outputsPtr = new BigUint64Array(spentOutputs.length);
+            
+            for (let i = 0; i < spentOutputs.length; i++) {
+                // Accessing protected member across instances using the established 'as any' pattern
+                outputsPtr[i] = (spentOutputs[i] as any).getHandle();
+            }
+        }
+
+        // Bypassing protected barrier on sibling class 'Transaction' using 'as any'
+        const txHandle = (txTo as any).getHandle();
+
+        const ptr = btck_precomputed_transaction_data_create(
+            txHandle,
+            outputsPtr, // Koffi treats BigUint64Array as T** (pointer to pointers)
+            outputsLen
+        ) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error("Failed to create native PrecomputedTransactionData");
+        }
+
+        super(ptr, true, null);
+    }
+
+    /**
+     * Create a copy of this PrecomputedTransactionData instance.
+     *
+     * @returns A new instance pointing to a duplicated native cache handle.
+     */
+    override copy(): this {
+        return super.copy();
     }
 }
 
@@ -159,6 +235,59 @@ export class ScriptPubkey extends KernelOpaquePtr {
      */
     override toString(): string {
         return this.toHex();
+    }
+
+    /**
+     * Verify that a spending transaction input correctly satisfies this script public key.
+     *
+     * Executes the native Bitcoin consensus script interpreter execution loop to validate signatures, 
+     * multi-sigs, timelocks, and smart contracts relative to the spending transaction framework.
+     *
+     * @param amount - The value of the UTXO being spent, denominated in satoshis (critical for SegWit validation).
+     * @param txTo - The spending transaction instance containing the input execution context.
+     * @param precomputedTxdata - Optional precomputed transaction hashing data cache (BIP143/BIP341 optimization).
+     * @param inputIndex - The zero-based index of the transaction input under verification.
+     * @param flags - Consensus and structural rule verification flags to pass to the engine loop.
+     * @returns True if the script evaluates successfully and spending conditions are validated.
+     * @throws {Error} If `btck_script_pubkey_verify` is unavailable.
+     * @throws {ScriptVerifyException} If verification fails or flags trigger an evaluation abort.
+     */
+    verify(
+        amount: bigint | number,
+        txTo: Transaction,
+        precomputedTxdata: PrecomputedTransactionData | null,
+        inputIndex: number,
+        flags: ScriptVerificationFlags
+    ): boolean {
+        if (!btck_script_pubkey_verify) {
+            throw new Error("btck_script_pubkey_verify unavailable");
+        }
+
+        // Allocate a 1-byte buffer to retrieve the uint8 status code back from the C-API pointer
+        const kStatusOut = new Uint8Array(1);
+
+        // Explicitly bypass TS sibling context barriers to read internal handles on complementary instances
+        const txHandle = (txTo as any).getHandle();
+        const precomputedHandle = precomputedTxdata ? (precomputedTxdata as any).getHandle() : 0n;
+
+        const successInt = btck_script_pubkey_verify(
+            this.getHandle(),
+            BigInt(amount),
+            txHandle,
+            precomputedHandle,
+            inputIndex,
+            flags,
+            kStatusOut
+        );
+
+        const success = Boolean(successInt);
+        const status = kStatusOut[0] as ScriptVerifyStatus;
+
+        if (!success && status !== ScriptVerifyStatus.OK) {
+            throw new ScriptVerifyException(status);
+        }
+
+        return success;
     }
 
     /**
