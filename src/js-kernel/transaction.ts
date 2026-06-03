@@ -13,9 +13,15 @@ import {
     btck_transaction_input_destroy,
     btck_transaction_input_get_out_point,
     btck_transaction_input_get_sequence,
+    btck_transaction_output_copy,
+    btck_transaction_output_create,
+    btck_transaction_output_destroy,
+    btck_transaction_output_get_amount,
+    btck_transaction_output_get_script_pubkey,
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
+import { ScriptPubkey } from "./script.js";
 
 /**
  * Identifier for a Bitcoin transaction (Txid).
@@ -257,6 +263,111 @@ export class TransactionInput extends KernelOpaquePtr {
 
     /**
      * Create a copy of this TransactionInput instance.
+     *
+     * @returns A new instance pointing to a duplicated native handle.
+     */
+    override copy(): this {
+        return super.copy();
+    }
+}
+
+/**
+ * Output from a Bitcoin transaction (TxOut) that specifies transferable value.
+ *
+ * A transaction output defines the numeric amount of bitcoin (denominated in satoshis) 
+ * being transferred, alongside the explicit spending conditions (`scriptPubkey`) 
+ * that a future transaction input must satisfy to claim and spend the funds.
+ *
+ * This wrapper supports a dual lifecycle: it can either construct a brand new 
+ * native allocation from an active script pubkey and value, or wrap an existing 
+ * native memory address returned downstream from an established block or transaction.
+ */
+export class TransactionOutput extends KernelOpaquePtr {
+    protected static override destroyFn = btck_transaction_output_destroy as (ptr: bigint) => void;
+    protected static override copyFn = btck_transaction_output_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Wrap an existing native transaction output pointer.
+     *
+     * @param ptr - The native pointer handle.
+     * @param ownsPtr - Whether this instance owns the lifetime of the pointer.
+     * @param parent - The parent object holding this reference, if it's a borrowed view.
+     */
+    constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null);
+    /**
+     * Allocate a brand new native transaction output instance from components.
+     *
+     * @param scriptPubkey - The script public key defining the output's spending conditions.
+     * @param amount - The value allocated to this output, denominated in satoshis.
+     */
+    constructor(scriptPubkey: ScriptPubkey, amount: bigint | number);
+    /**
+     * Polymorphic implementation handling both direct pointer wrapping and native allocation.
+     *
+     * @throws {Error} If `btck_transaction_output_create` is unavailable, or if the native 
+     * allocation layer fails and returns an invalid null pointer handle.
+     */
+    constructor(arg1: bigint | ScriptPubkey, arg2?: boolean | bigint | number, arg3: KernelOpaquePtr | null = null) {
+        if (arg1 instanceof ScriptPubkey) {
+            if (!btck_transaction_output_create) {
+                throw new Error("btck_transaction_output_create unavailable");
+            }
+            const amount = BigInt(arg2 as number | bigint);
+            const ptr = btck_transaction_output_create((arg1 as any).getHandle(), amount) as bigint;
+            if (ptr === 0n) {
+                throw new Error("Failed to create native TransactionOutput");
+            }
+            super(ptr, true, null);
+        } else {
+            const ownsPtr = typeof arg2 === "boolean" ? arg2 : true;
+            super(arg1 as bigint, ownsPtr, arg3 as KernelOpaquePtr | null);
+        }
+    }
+
+    /**
+     * The value of this output denominated in satoshis.
+     *
+     * @returns A 64-bit unsigned integer primitive representing the satoshi value.
+     * @throws {Error} If `btck_transaction_output_get_amount` is unavailable.
+     */
+    get amount(): bigint {
+        if (!btck_transaction_output_get_amount) {
+            throw new Error("btck_transaction_output_get_amount unavailable");
+        }
+        // Force evaluation into a real runtime BigInt primitive
+        return BigInt(btck_transaction_output_get_amount(this.getHandle()));
+    }
+
+    /**
+     * The spending conditions bound to this output.
+     *
+     * @returns The ScriptPubkey defining validation criteria, instantiated 
+     * as a dependent non-owning view tied directly to the lifecycle of this output.
+     * @throws {Error} If `btck_transaction_output_get_script_pubkey` is unavailable, or if the native 
+     * layer returns an invalid null pointer handle.
+     */
+    get scriptPubkey(): ScriptPubkey {
+        if (!btck_transaction_output_get_script_pubkey) {
+            throw new Error("btck_transaction_output_get_script_pubkey unavailable");
+        }
+        const ptr = btck_transaction_output_get_script_pubkey(this.getHandle()) as bigint;
+        if (ptr === 0n) {
+            throw new Error("Failed to get ScriptPubkey pointer from TransactionOutput");
+        }
+        return new ScriptPubkey(ptr, false, this);
+    }
+
+    /**
+     * Return a string representation of the transaction output.
+     *
+     * @returns A descriptive string showing the satoshi amount and script pubkey byte length.
+     */
+    override toString(): string {
+        return `<TransactionOutput amount=${this.amount} spk_len=${this.scriptPubkey.toBytes().length}>`;
+    }
+
+    /**
+     * Create a copy of this TransactionOutput instance.
      *
      * @returns A new instance pointing to a duplicated native handle.
      */
