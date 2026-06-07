@@ -49,7 +49,54 @@ koffi.opaque('struct_btck_TransactionSpentOutputs');
 koffi.opaque('struct_btck_Coin');
 koffi.opaque('struct_btck_PrecomputedTransactionData');
 
+
+/**
+ * FFI Callback Prototypes
+ * * These types define the function signatures for the native C++ validation 
+ * interface, logging, and stream event hooks.
+ */
 export const WriteBytesCb = koffi.proto("WriteBytesCb", int32_t, ["const void *", uint64_t, "void *"]);
+export const BlockTipCb = koffi.proto("BlockTipCb", "void", ["void*", "uint8", "void*", "double"]);
+export const HeaderTipCb = koffi.proto("HeaderTipCb", "void", ["void*", "uint8", "int64", "int64", "int32"]);
+export const ProgressCb = koffi.proto("ProgressCb", "void", ["void*", "char*", "uint64", "int32", "int32"]);
+export const WarningSetCb = koffi.proto("WarningSetCb", "void", ["void*", "uint8", "char*", "uint64"]);
+export const WarningUnsetCb = koffi.proto("WarningUnsetCb", "void", ["void*", "uint8"]);
+export const NotificationErrorCb = koffi.proto("NotificationErrorCb", "void", ["void*", "char*", "uint64"]);
+export const btck_LogCallback = koffi.proto("btck_LogCallback", "void", ["const char*", uint64_t, "void*"]);
+export const BlockCheckedCb = koffi.proto("BlockCheckedCb", "void", ["void*", "void*", "void*"]);
+export const BlockEntryCb = koffi.proto("BlockEntryCb", "void", ["void*", "void*", "void*"]);
+export const UserDataDestroyCb = koffi.proto("UserDataDestroyCb", "void", ["void*"]);
+
+// Packed structure matching structure definition
+export const btck_LoggingOptions = koffi.pack('struct_btck_LoggingOptions', {
+    log_timestamps: int32_t,
+    log_time_micros: int32_t,
+    log_threadnames: int32_t,
+    log_sourcelocations: int32_t,
+    always_print_category_levels: int32_t,
+});
+
+export const btck_ValidationInterfaceCallbacks = koffi.struct('btck_ValidationInterfaceCallbacks', {
+    user_data: 'void*',
+    user_data_destroy: koffi.pointer(UserDataDestroyCb),
+    block_checked: koffi.pointer(BlockCheckedCb),
+    pow_valid_block: koffi.pointer(BlockEntryCb),
+    block_connected: koffi.pointer(BlockEntryCb),
+    block_disconnected: koffi.pointer(BlockEntryCb)
+});
+
+export const btck_NotificationInterfaceCallbacks = koffi.struct('btck_NotificationInterfaceCallbacks', {
+    user_data: 'void*',
+    user_data_destroy: koffi.pointer(UserDataDestroyCb),
+    block_tip: koffi.pointer(BlockTipCb),
+    header_tip: koffi.pointer(HeaderTipCb),
+    progress: koffi.pointer(ProgressCb),
+    warning_set: koffi.pointer(WarningSetCb),
+    warning_unset: koffi.pointer(WarningUnsetCb),
+    flush_error: koffi.pointer(NotificationErrorCb),
+    fatal_error: koffi.pointer(NotificationErrorCb)
+});
+
 
 /**=========================================================
  * Block Bindings
@@ -429,4 +476,43 @@ export const btck_chain_contains = loadOptional('btck_chain_contains', () =>
 
 export const btck_chain_get_height = loadOptional('btck_chain_get_height', () =>
     lib.func('btck_chain_get_height', int32_t, ['struct_btck_Chain*'])
+);
+
+/**===========================================================
+ * ContextOptions & Context Bindings
+ *===========================================================*/
+export const btck_context_options_create = loadOptional('btck_context_options_create', () =>
+    lib.func('btck_context_options_create', 'struct_btck_ContextOptions*', [])
+);
+
+export const btck_context_options_set_chainparams = loadOptional('btck_context_options_set_chainparams', () =>
+    lib.func('btck_context_options_set_chainparams', 'void', ['struct_btck_ContextOptions*', 'struct_btck_ChainParameters*'])
+);
+
+export const btck_context_options_set_notifications = loadOptional('btck_context_options_set_notifications', () =>
+    lib.func('btck_context_options_set_notifications', 'void', ['struct_btck_ContextOptions*', btck_NotificationInterfaceCallbacks])
+);
+
+export const btck_context_options_set_validation_interface = loadOptional('btck_context_options_set_validation_interface', () =>
+    lib.func('btck_context_options_set_validation_interface', 'void', ['struct_btck_ContextOptions*', btck_ValidationInterfaceCallbacks])
+);
+
+export const btck_context_options_destroy = loadOptional('btck_context_options_destroy', () =>
+    lib.func('btck_context_options_destroy', 'void', ['struct_btck_ContextOptions*'])
+);
+
+export const btck_context_create = loadOptional('btck_context_create', () =>
+    lib.func('btck_context_create', 'struct_btck_Context*', ['struct_btck_ContextOptions*'])
+);
+
+export const btck_context_copy = loadOptional('btck_context_copy', () =>
+    lib.func('btck_context_copy', 'struct_btck_Context*', ['struct_btck_Context*'])
+);
+
+export const btck_context_interrupt = loadOptional('btck_context_interrupt', () =>
+    lib.func('btck_context_interrupt', int32_t, ['struct_btck_Context*'])
+);
+
+export const btck_context_destroy = loadOptional('btck_context_destroy', () =>
+    lib.func('btck_context_destroy', 'void', ['struct_btck_Context*'])
 );
