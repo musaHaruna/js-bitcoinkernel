@@ -23,9 +23,10 @@ const uint32_t = 'uint32';
 const int32_t = 'int32';
 const int64_t = "int64";
 const uint64_t = "uint64";
-const btck_ChainType = 'uint8';
 const btck_ScriptVerificationFlags = 'uint32';
-
+const btck_LogCategory = 'uint8';
+const btck_LogLevel = 'uint8';
+const btck_ChainType = 'uint8';
 const ByteArray32 = koffi.array('uint8', 32);
 const ByteArray80 = koffi.array('uint8', 80);
 
@@ -66,6 +67,7 @@ export const btck_LogCallback = koffi.proto("btck_LogCallback", "void", ["const 
 export const BlockCheckedCb = koffi.proto("BlockCheckedCb", "void", ["void*", "void*", "void*"]);
 export const BlockEntryCb = koffi.proto("BlockEntryCb", "void", ["void*", "void*", "void*"]);
 export const UserDataDestroyCb = koffi.proto("UserDataDestroyCb", "void", ["void*"]);
+export const btck_DestroyCallback = koffi.proto("btck_DestroyCallback", "void", ["void*"]);
 
 // Packed structure matching structure definition
 export const btck_LoggingOptions = koffi.pack('struct_btck_LoggingOptions', {
@@ -515,4 +517,35 @@ export const btck_context_interrupt = loadOptional('btck_context_interrupt', () 
 
 export const btck_context_destroy = loadOptional('btck_context_destroy', () =>
     lib.func('btck_context_destroy', 'void', ['struct_btck_Context*'])
+);
+
+/**===========================================================
+ * Logging Bindings
+ *===========================================================*/
+export const btck_logging_disable = loadOptional('btck_logging_disable', () =>
+    lib.func('btck_logging_disable', 'void', [])
+);
+
+export const btck_logging_set_options = loadOptional('btck_logging_set_options', () =>
+    lib.func('btck_logging_set_options', 'void', [btck_LoggingOptions])
+);
+
+export const btck_logging_set_level_category = loadOptional('btck_logging_set_level_category', () =>
+    lib.func('btck_logging_set_level_category', 'void', [btck_LogCategory, btck_LogLevel])
+);
+
+export const btck_logging_enable_category = loadOptional('btck_logging_enable_category', () =>
+    lib.func('btck_logging_enable_category', 'void', [btck_LogCategory])
+);
+
+export const btck_logging_disable_category = loadOptional('btck_logging_disable_category', () =>
+    lib.func('btck_logging_disable_category', 'void', [btck_LogCategory])
+);
+
+export const btck_logging_connection_create = loadOptional('btck_logging_connection_create', () =>
+    lib.func('btck_logging_connection_create', 'struct_btck_LoggingConnection*', [koffi.pointer(btck_LogCallback), 'void*', koffi.pointer(btck_DestroyCallback)])
+);
+
+export const btck_logging_connection_destroy = loadOptional('btck_logging_connection_destroy', () =>
+    lib.func('btck_logging_connection_destroy', 'void', ['struct_btck_LoggingConnection*'])
 );
