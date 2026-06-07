@@ -23,6 +23,7 @@ const uint32_t = 'uint32';
 const int32_t = 'int32';
 const int64_t = "int64";
 const uint64_t = "uint64";
+const btck_ChainType = 'uint8';
 const btck_ScriptVerificationFlags = 'uint32';
 
 const ByteArray32 = koffi.array('uint8', 32);
@@ -327,4 +328,105 @@ export const btck_precomputed_transaction_data_copy = loadOptional('btck_precomp
 
 export const btck_precomputed_transaction_data_destroy = loadOptional('btck_precomputed_transaction_data_destroy', () =>
     lib.func('btck_precomputed_transaction_data_destroy', 'void', ['struct_btck_PrecomputedTransactionData*'])
+);
+
+/**===========================================================
+ * Chain Bindings
+*============================================================*/
+/**
+ * ChainParameters 
+ */
+export const btck_chain_parameters_create = loadOptional("btck_chain_parameters_create", () => 
+    lib.func("btck_chain_parameters_create", "struct_btck_ChainParameters*", [btck_ChainType]));
+
+export const btck_chain_parameters_copy = loadOptional("btck_chain_parameters_copy", () =>
+    lib.func("btck_chain_parameters_copy", "struct_btck_ChainParameters*", ["struct_btck_ChainParameters*"])
+);
+
+export const btck_chain_parameters_destroy = loadOptional("btck_chain_parameters_destroy", () =>
+    lib.func("btck_chain_parameters_destroy", "void", ["struct_btck_ChainParameters*"])
+);
+
+export const btck_chain_parameters_get_consensus_params = loadOptional("btck_chain_parameters_get_consensus_params", () =>
+    lib.func("btck_chain_parameters_get_consensus_params", "struct_btck_ConsensusParams*", ["struct_btck_ChainParameters*"])
+);
+
+
+/**
+ * ChainstateManagerOptions
+ */
+export const btck_chainstate_manager_options_create = loadOptional('btck_chainstate_manager_options_create', () =>
+    lib.func('btck_chainstate_manager_options_create', 'struct_btck_ChainstateManagerOptions*', [
+        'struct_btck_Context*', 'const char*', size_t, 'const char*', size_t
+    ])
+);
+
+export const btck_chainstate_manager_options_set_worker_threads_num = loadOptional('btck_chainstate_manager_options_set_worker_threads_num', () =>
+    lib.func('btck_chainstate_manager_options_set_worker_threads_num', 'void', ['struct_btck_ChainstateManagerOptions*', int32_t])
+);
+
+export const btck_chainstate_manager_options_set_wipe_dbs = loadOptional('btck_chainstate_manager_options_set_wipe_dbs', () =>
+    lib.func('btck_chainstate_manager_options_set_wipe_dbs', int32_t, ['struct_btck_ChainstateManagerOptions*', int32_t, int32_t])
+);
+
+export const btck_chainstate_manager_options_update_block_tree_db_in_memory = loadOptional('btck_chainstate_manager_options_update_block_tree_db_in_memory', () =>
+    lib.func('btck_chainstate_manager_options_update_block_tree_db_in_memory', 'void', ['struct_btck_ChainstateManagerOptions*', int32_t])
+);
+
+export const btck_chainstate_manager_options_update_chainstate_db_in_memory = loadOptional('btck_chainstate_manager_options_update_chainstate_db_in_memory', () =>
+    lib.func('btck_chainstate_manager_options_update_chainstate_db_in_memory', 'void', ['struct_btck_ChainstateManagerOptions*', int32_t])
+);
+
+export const btck_chainstate_manager_options_destroy = loadOptional('btck_chainstate_manager_options_destroy', () =>
+    lib.func('btck_chainstate_manager_options_destroy', 'void', ['struct_btck_ChainstateManagerOptions*'])
+);
+
+/**
+ * ChainstateManager
+ */
+export const btck_chainstate_manager_create = loadOptional('btck_chainstate_manager_create', () =>
+    lib.func('btck_chainstate_manager_create', 'struct_btck_ChainstateManager*', ['struct_btck_ChainstateManagerOptions*'])
+);
+
+export const btck_chainstate_manager_get_best_entry = loadOptional('btck_chainstate_manager_get_best_entry', () =>
+    lib.func('btck_chainstate_manager_get_best_entry', 'struct_btck_BlockTreeEntry*', ['struct_btck_ChainstateManager*'])
+);
+
+export const btck_chainstate_manager_process_block_header = loadOptional('btck_chainstate_manager_process_block_header', () =>
+    lib.func('btck_chainstate_manager_process_block_header', int32_t, ['struct_btck_ChainstateManager*', 'struct_btck_BlockHeader*', 'struct_btck_BlockValidationState*'])
+);
+
+export const btck_chainstate_manager_import_blocks = loadOptional('btck_chainstate_manager_import_blocks', () =>
+    lib.func('btck_chainstate_manager_import_blocks', int32_t, ['struct_btck_ChainstateManager*', 'const char**', 'uint64*', size_t])
+);
+
+export const btck_chainstate_manager_process_block = loadOptional('btck_chainstate_manager_process_block', () =>
+    lib.func('btck_chainstate_manager_process_block', int32_t, ['struct_btck_ChainstateManager*', 'struct_btck_Block*', 'int32*'])
+);
+
+export const btck_chainstate_manager_get_active_chain = loadOptional('btck_chainstate_manager_get_active_chain', () =>
+    lib.func('btck_chainstate_manager_get_active_chain', 'struct_btck_Chain*', ['struct_btck_ChainstateManager*'])
+);
+
+export const btck_chainstate_manager_get_block_tree_entry_by_hash = loadOptional('btck_chainstate_manager_get_block_tree_entry_by_hash', () =>
+    lib.func('btck_chainstate_manager_get_block_tree_entry_by_hash', 'struct_btck_BlockTreeEntry*', ['struct_btck_ChainstateManager*', 'struct_btck_BlockHash*'])
+);
+
+export const btck_chainstate_manager_destroy = loadOptional('btck_chainstate_manager_destroy', () =>
+    lib.func('btck_chainstate_manager_destroy', 'void', ['struct_btck_ChainstateManager*'])
+);
+
+/**
+ * ChainView 
+ */
+export const btck_chain_get_by_height = loadOptional('btck_chain_get_by_height', () =>
+    lib.func('btck_chain_get_by_height', 'struct_btck_BlockTreeEntry*', ['struct_btck_Chain*', int32_t])
+);
+
+export const btck_chain_contains = loadOptional('btck_chain_contains', () =>
+    lib.func('btck_chain_contains', int32_t, ['struct_btck_Chain*', 'struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_chain_get_height = loadOptional('btck_chain_get_height', () =>
+    lib.func('btck_chain_get_height', int32_t, ['struct_btck_Chain*'])
 );
