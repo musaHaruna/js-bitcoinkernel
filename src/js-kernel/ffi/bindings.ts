@@ -49,6 +49,15 @@ koffi.opaque('struct_btck_TransactionInput');
 koffi.opaque('struct_btck_TransactionSpentOutputs');
 koffi.opaque('struct_btck_Coin');
 koffi.opaque('struct_btck_PrecomputedTransactionData');
+koffi.opaque('struct_btck_BlockValidationState');
+koffi.opaque('struct_btck_ChainstateManager');
+koffi.opaque('struct_btck_Block');
+koffi.opaque('struct_btck_BlockSpentOutputs');
+koffi.opaque('struct_btck_LoggingConnection');
+koffi.opaque('struct_btck_ChainstateManagerOptions');
+koffi.opaque('struct_btck_Chain');
+koffi.opaque('struct_btck_ValidationInterfaceCallbacks');
+koffi.opaque('struct_btck_NotificationInterfaceCallbacks');
 
 
 /**
