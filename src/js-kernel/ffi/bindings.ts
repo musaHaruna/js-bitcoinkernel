@@ -400,14 +400,11 @@ export const btck_chain_parameters_get_consensus_params = loadOptional("btck_cha
     lib.func("btck_chain_parameters_get_consensus_params", "struct_btck_ConsensusParams*", ["struct_btck_ChainParameters*"])
 );
 
-
 /**
  * ChainstateManagerOptions
  */
 export const btck_chainstate_manager_options_create = loadOptional('btck_chainstate_manager_options_create', () =>
-    lib.func('btck_chainstate_manager_options_create', 'struct_btck_ChainstateManagerOptions*', [
-        'struct_btck_Context*', 'const char*', size_t, 'const char*', size_t
-    ])
+    lib.func('btck_chainstate_manager_options_create', 'struct_btck_ChainstateManagerOptions*', ['struct_btck_Context*', 'const char*', size_t, 'const char*', size_t])
 );
 
 export const btck_chainstate_manager_options_set_worker_threads_num = loadOptional('btck_chainstate_manager_options_set_worker_threads_num', () =>
