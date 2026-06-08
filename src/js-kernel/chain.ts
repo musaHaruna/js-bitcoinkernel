@@ -1,9 +1,16 @@
+import { Context } from "./context.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import {
     btck_chain_parameters_create,
     btck_chain_parameters_destroy,
     btck_chain_parameters_copy,
-    btck_chain_parameters_get_consensus_params
+    btck_chain_parameters_get_consensus_params,
+    btck_chainstate_manager_options_create,
+    btck_chainstate_manager_options_destroy,
+    btck_chainstate_manager_options_set_wipe_dbs,
+    btck_chainstate_manager_options_set_worker_threads_num,
+    btck_chainstate_manager_options_update_block_tree_db_in_memory,
+    btck_chainstate_manager_options_update_chainstate_db_in_memory
  } from "./ffi/bindings.js";
 
 /**
@@ -112,5 +119,157 @@ export class ChainParameters extends KernelOpaquePtr {
 
         // Instantiates an unowned dependent view linked back to this parent instance
         return ConsensusParams.fromView(ptr, this);
+    }
+}
+
+/**
+ * Configuration options for initializing a `ChainstateManager`.
+ *
+ * This class serves as a configuration builder to specify how the node's underlying databases, 
+ * path locations, validation engines, and performance metrics should be provisioned.
+ *
+ * > ### ⚠️ Memory & Lifecycle Constraints
+ * > * **One-Shot Configuration:** Once a `ChainstateManager` is initialized using an instance of 
+ * >   this class, subsequent changes to this options object will have **no effect** on the live manager.
+ * > * **Context Anchoring:** This class retains an internal JS reference to the parent {@link Context} 
+ * >   to prevent the V8 engine from prematurely garbage-collecting the runtime context while the options 
+ * >   are actively being configured.
+ */
+export class ChainstateManagerOptions extends KernelOpaquePtr {
+    protected static override destroyFn = btck_chainstate_manager_options_destroy as (ptr: bigint) => void;
+
+    /** Internal reference to keep the core execution context pinned in JS memory. */
+    private _context: Context | null = null;
+
+    /**
+     * Create a chainstate manager options wrapper by pointing to an existing native struct.
+     *
+     * @param ptr - The native memory handle address.
+     * @param ownsPtr - Whether this JavaScript class wrapper actively manages the unmanaged memory lifecycle.
+     * @param parent - The structural parent object pinning this configuration's visibility.
+     */
+    constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null);
+    /**
+     * Allocate a fresh, unmanaged chainstate manager configuration structure on the native heap.
+     *
+     * @param context - The active runtime execution context engine.
+     * @param datadir - The absolute path to the base data directory (used for storing the UTXO set, indexes, etc.).
+     * @param blocksDir - The absolute path to the directory where raw `.dat` block storage files are saved.
+     */
+    constructor(context: Context, datadir: string, blocksDir: string);
+    constructor(arg1: bigint | Context, arg2?: boolean | string, arg3: KernelOpaquePtr | null | string = null) {
+        if (arg1 instanceof Context) {
+            if (!btck_chainstate_manager_options_create) {
+                throw new Error("btck_chainstate_manager_options_create unavailable");
+            }
+
+            const datadirStr = arg2 as string;
+            const blocksDirStr = arg3 as string;
+
+            // Convert JavaScript strings into raw UTF-8 byte arrays
+            const datadirBuf = Buffer.from(datadirStr, "utf8");
+            const blocksDirBuf = Buffer.from(blocksDirStr, "utf8");
+
+            // Extract the context's handle using the peer bypass rule
+            const contextHandle = (arg1 as any).getHandle();
+
+            const ptr = btck_chainstate_manager_options_create(contextHandle, datadirBuf, BigInt(datadirBuf.length), blocksDirBuf, BigInt(blocksDirBuf.length)) as bigint;
+
+            if (ptr === 0n) {
+                throw new Error("Failed to create native ChainstateManagerOptions");
+            }
+
+            super(ptr, true, null);
+            this._context = arg1;
+        } else {
+            const ownsPtr = typeof arg2 === "boolean" ? arg2 : true;
+            super(arg1 as bigint, ownsPtr, arg3 as KernelOpaquePtr | null);
+        }
+    }
+
+    /**
+     * Configure destructive wiping options for the block tree index and UTXO chainstate databases.
+     *
+     * Used when reindexing or forcing a full resynchronization of the blockchain ledger state.
+     *
+     * > ### ⚠️ Operational Warnings
+     * > * **Execution Pre-requisite:** If `wipeBlockTreeDb` is set to `true`, you **must** call 
+     * >   the `ChainstateManager` initialization and trigger block imports; otherwise, the native wipe 
+     * >   operation will not be dispatched.
+     * > * **Structural Invariant:** The block tree database (`wipeBlockTreeDb`) should only be wiped if 
+     * >   the chainstate database (`wipeChainstateDb`) is also being wiped. Wiping block indexes without 
+     * >   clearing the corresponding UTXO set will cause fatal consensus synchronization errors.
+     *
+     * @param wipeBlockTreeDb - True to delete the block index metadata (the graph of block headers).
+     * @param wipeChainstateDb - True to completely wipe out the active LevelDB UTXO (unspent coins) set.
+     * @returns `0` if the configuration was applied successfully; `1` if an operational failure occurred.
+     * @throws {Error} If `btck_chainstate_manager_options_set_wipe_dbs` FFI bindings are unavailable.
+     */
+    setWipeDbs(wipeBlockTreeDb: boolean, wipeChainstateDb: boolean): number {
+        if (!btck_chainstate_manager_options_set_wipe_dbs) {
+            throw new Error("btck_chainstate_manager_options_set_wipe_dbs unavailable");
+        }
+
+        return btck_chainstate_manager_options_set_wipe_dbs(this.getHandle(), wipeBlockTreeDb, wipeChainstateDb);
+    }
+
+    /**
+     * Configure the parallel worker thread pool threshold for cryptographic script validation.
+     *
+     * Sets the scaling limits for executing parallel ECDSA/Schnorr transaction signature verifications.
+     *
+     * @param workerThreads - The maximum number of worker threads allocated to validation execution. 
+     * Setting this to `0` turns off parallel verification entirely (falling back to single-threaded sequential execution). 
+     * *Note: The native kernel layer clamps this configuration value internally between `0` and `15` threads.*
+     * @throws {Error} If `btck_chainstate_manager_options_set_worker_threads_num` FFI bindings are unavailable.
+     */
+    setWorkerThreadsNum(workerThreads: number): void {
+        if (!btck_chainstate_manager_options_set_worker_threads_num) {
+            throw new Error("btck_chainstate_manager_options_set_worker_threads_num unavailable");
+        }
+
+        btck_chainstate_manager_options_set_worker_threads_num(this.getHandle(), workerThreads);
+    }
+
+    /**
+     * Toggle volatile, in-memory execution for the block tree index database.
+     *
+     * When enabled, the block headers graph registry skips disk serialization and is pinned inside 
+     * RAM. This drastically speeds up execution overhead but strips long-term state persistence.
+     *
+     * @param blockTreeDbInMemory - `true` to confine block tracking completely within memory; 
+     * `false` to enable standard LevelDB disk persistence.
+     * @throws {Error} If `btck_chainstate_manager_options_update_block_tree_db_in_memory` FFI bindings are unavailable.
+     */
+    updateBlockTreeDbInMemory(blockTreeDbInMemory: boolean): void {
+        if (!btck_chainstate_manager_options_update_block_tree_db_in_memory) {
+            throw new Error("btck_chainstate_manager_options_update_block_tree_db_in_memory unavailable");
+        }
+
+        // Explicitly map boolean to integer to mirror the native integration rules
+        btck_chainstate_manager_options_update_block_tree_db_in_memory(this.getHandle(), blockTreeDbInMemory ? 1 : 0);
+    }
+
+    /**
+     * Toggle volatile, in-memory execution for the UTXO chainstate database.
+     *
+     * When enabled, the database tracking unspent transaction outputs is stored in RAM. 
+     * This is highly optimized for testing environments, transient blockchain validation sweeps, 
+     * or ephemeral sandboxes where historical disk persistence can be dropped.
+     *
+     * @param chainstateDbInMemory - `true` to confine the UTXO coin set completely within memory; 
+     * `false` to use standard disk-backed database storage.
+     * @throws {Error} If `btck_chainstate_manager_options_update_chainstate_db_in_memory` FFI bindings are unavailable.
+     */
+    updateChainstateDbInMemory(chainstateDbInMemory: boolean): void {
+        if (!btck_chainstate_manager_options_update_chainstate_db_in_memory) {
+            throw new Error("btck_chainstate_manager_options_update_chainstate_db_in_memory unavailable");
+        }
+
+        // Explicitly map boolean to integer to mirror the native integration rules
+        btck_chainstate_manager_options_update_chainstate_db_in_memory(
+            this.getHandle(),
+            chainstateDbInMemory ? 1 : 0
+        );
     }
 }
