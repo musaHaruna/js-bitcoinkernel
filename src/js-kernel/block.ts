@@ -15,6 +15,12 @@ import {
     btck_block_header_get_version,
     btck_block_header_get_nonce,
     btck_block_header_to_bytes,
+
+    btck_block_validation_state_create,
+    btck_block_validation_state_destroy,
+    btck_block_validation_state_copy,
+    btck_block_validation_state_get_validation_mode,
+    btck_block_validation_state_get_block_validation_result
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
@@ -322,5 +328,149 @@ export class BlockHeader extends KernelOpaquePtr {
      */
     override toString(): string {
         return `BlockHeader hash=${this.blockHash.toString()}`;
+    }
+}
+
+/**
+ * High-level macro resolution of an individual validation pipeline pass.
+ *
+ * Indicates whether an unmanaged block structure successfully satisfied consensus,
+ * definitively violated validation invariants, or stalled due to operational environmental issues.
+ */
+export enum ValidationMode {
+    /** The target structure passed all structural, contextual, and cryptographic validation passes. */
+    VALID = 0,
+    /** Validation failed due to explicit script, consensus, or context rule violations. */
+    INVALID = 1,
+    /** An internal execution failure or resource issue occurred during evaluation (e.g., disk I/O failure). */
+    INTERNAL_ERROR = 2
+}
+
+/**
+ * Granular consensus rejection metrics detailing why a block validation attempt failed.
+ *
+ * Provides specialized tracking tokens mirroring the underlying Bitcoin Core engine rejections.
+ * These metrics differentiate between basic cryptographic defects, malicious structural anomalies, 
+ * and sequence orchestration gaps.
+ */
+export enum BlockValidationResult {
+    /** Initial fallback state; indicates the block under review has not yet run into a rejection constraint. */
+    UNSET = 0,
+    
+    /** * Rejected by core consensus rules.
+     * Includes standard execution anomalies like illegal coinbase rewards, structural block size violations, 
+     * or invalid transaction scripts.
+     */
+    CONSENSUS = 1,
+    
+    /** The block hash matches a known entry in the internal invalidity block cache memory. */
+    CACHED_INVALID = 2,
+    
+    /** * The header fails structural requirements.
+     * Indicates an invalid proof-of-work digest (hash above target difficulty threshold) or structurally corrupt components.
+     */
+    INVALID_HEADER = 3,
+    
+    /** * Merkle tree hashing mutation detected.
+     * Indicates a transaction list structure exploit attempt exploiting internal Merkle tree padding vulnerabilities 
+     * (e.g., duplicating transactions to generate identical Merkle root hashes).
+     */
+    MUTATED = 4,
+    
+    /** * The immediate parent block referenced by `prevHash` is absent from disk index storage.
+     * Classifies the target block as an orphan.
+     */
+    MISSING_PREV = 5,
+    
+    /** The immediate ancestor block this header attempts to build upon has already been explicitly marked invalid. */
+    INVALID_PREV = 6,
+    
+    /** * The header timestamp violates consensus timeline boundaries.
+     * The declared timestamp falls more than 2 hours ahead of the local node's network-adjusted median-time-past calculation.
+     */
+    TIME_FUTURE = 7,
+    
+    /** The block header resides on a fork branch that fails to meet minimum required proof-of-work checkpoint milestones. */
+    HEADER_LOW_WORK = 8
+}
+
+/**
+ * Opaque thread-safe state container tracking the status of an active block validation pass.
+ *
+ * This class acts as the central interface reporting block verification outcomes. 
+ * It can wrap an active, borrowed pointer issued by internal consensus verification engines, 
+ * or allocate an isolated, fresh state block directly on the native kernel heap.
+ */
+export class BlockValidationState extends KernelOpaquePtr {
+    protected static override createFn = btck_block_validation_state_create as (...args: unknown[]) => bigint;
+    protected static override destroyFn = btck_block_validation_state_destroy as (ptr: bigint) => void;
+    protected static override copyFn = btck_block_validation_state_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Instantiate a new validation state container.
+     *
+     * @param ptr - Optional handle pointing to an existing native state block. If omitted, 
+     * the constructor dynamically allocates a brand new validation state tracking block on the native heap.
+     * @param ownsPtr - Whether this JavaScript class wrapper actively manages the unmanaged memory lifecycle. Defaults to true.
+     * @param parent - Structural parent object pinning this state visibility within an explicit parent lifecycle boundary.
+     * * @throws {Error} If `btck_block_validation_state_create` function bindings are missing, or if native allocator logic fails.
+     */
+    constructor(ptr?: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+        if (ptr === undefined) {
+            if (!btck_block_validation_state_create) {
+                throw new Error("btck_block_validation_state_create unavailable");
+            }
+            
+            const newPtr = btck_block_validation_state_create() as bigint;
+            
+            if (newPtr === 0n) {
+                throw new Error("Failed to create BlockValidationState");
+            }
+            
+            super(newPtr, true, null);
+        } else {
+            super(ptr, ownsPtr, parent);
+        }
+    }
+
+    /**
+     * Extract the macro execution outcome matching this validation pipeline.
+     *
+     * @returns A {@link ValidationMode} token representing the baseline processing status.
+     * @throws {Error} If `btck_block_validation_state_get_validation_mode` function bindings are missing.
+     */
+    get validationMode(): ValidationMode {
+        if (!btck_block_validation_state_get_validation_mode) {
+            throw new Error("btck_block_validation_state_get_validation_mode unavailable");
+        }
+
+        const mode = btck_block_validation_state_get_validation_mode(this.getHandle()) as number;
+        
+        return mode as ValidationMode;
+    }
+
+    /**
+     * Extract the detailed micro-level failure reason assigned to this validation window.
+     *
+     * @returns A {@link BlockValidationResult} code. If the block successfully passes validation, returns `BlockValidationResult.UNSET`.
+     * @throws {Error} If `btck_block_validation_state_get_block_validation_result` function bindings are missing.
+     */
+    get blockValidationResult(): BlockValidationResult {
+        if (!btck_block_validation_state_get_block_validation_result) {
+            throw new Error("btck_block_validation_state_get_block_validation_result unavailable");
+        }
+
+        const result = btck_block_validation_state_get_block_validation_result(this.getHandle()) as number;
+        
+        return result as BlockValidationResult;
+    }
+
+    /**
+     * Create a copy of this BlockValidationState instance.
+     *
+     * @returns A new instance pointing to a duplicated native validation state handle.
+     */
+    override copy(): this {
+        return super.copy();
     }
 }
