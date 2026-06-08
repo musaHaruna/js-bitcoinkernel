@@ -22,14 +22,17 @@ import {
     btck_block_validation_state_copy,
     btck_block_validation_state_get_validation_mode,
     btck_block_validation_state_get_block_validation_result,
+
     btck_block_tree_entry_get_block_hash,
     btck_block_tree_entry_get_previous,
     btck_block_tree_entry_get_height,
     btck_block_tree_entry_equals,
     btck_block_tree_entry_get_ancestor,
     btck_block_tree_entry_get_block_header,
+
     btck_block_count_transactions,
     btck_block_get_transaction_at,
+
     btck_block_check,
     btck_block_copy,
     btck_block_create,
@@ -37,10 +40,14 @@ import {
     btck_block_get_hash,
     btck_block_get_header,
     btck_block_to_bytes,
+
+    btck_block_spent_outputs_get_transaction_spent_outputs_at,
+    btck_block_spent_outputs_destroy,
+    btck_block_spent_outputs_copy,
 } from "./ffi/bindings.js";
 import koffi from "koffi"
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
-import { Transaction } from "./transaction.js";
+import { Transaction, TransactionSpentOutputs } from "./transaction.js";
 import { LazySequence } from "./util/sequence.js";
 
 /**
@@ -997,6 +1004,62 @@ export class Block extends KernelOpaquePtr {
      * Create a copy of this Block instance.
      *
      * @returns A new instance pointing to a duplicated native block handle allocation.
+     */
+    override copy(): this {
+        return super.copy();
+    }
+}
+
+/**
+ * Unmanaged container holding the spent outputs (undo data) for an entire block.
+ *
+ * This class wraps an opaque pointer to a block's undo context (corresponds to `.rev` data files 
+ * in Bitcoin Core). It archives the full state of all UTXOs consumed by this block's inputs. 
+ * * This metadata is critical for state restoration: if the local node encounters a chain 
+ * reorganization (re-org), it uses this "undo data" to safely disconnect blocks, roll back 
+ * the UTXO set database to a previous historical block height checkpoint, and restore the spent coins.
+ */
+export class BlockSpentOutputs extends KernelOpaquePtr {
+    // Non-instantiable directly from JavaScript, but can own pointers when read from disk
+    protected static override destroyFn = btck_block_spent_outputs_destroy as (ptr: bigint) => void;
+    protected static override copyFn = btck_block_spent_outputs_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Wrap an existing native block spent outputs pointer.
+     *
+     * @param ptr - The native memory handle.
+     * @param ownsPtr - Whether this instance governs the lifetime of the unmanaged pointer. Defaults to true.
+     * @param parent - The parent memory boundary holding this reference, if it is a borrowed view. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+        super(ptr, ownsPtr, parent);
+    }
+
+    /**
+     * Direct protected array accessor to extract a specific transaction spent outputs handle from the native layer.
+     *
+     * @param index - Zero-based position index tracking the transaction target (excluding coinbase).
+     * @returns A non-owning {@link TransactionSpentOutputs} instance mapped directly to this parent memory boundary.
+     * @throws {Error} If native lookup bindings are missing or if pointer parsing resolves to null.
+     */
+    protected getTransactionSpentOutputsAt(index: number): TransactionSpentOutputs {
+        if (!btck_block_spent_outputs_get_transaction_spent_outputs_at) {
+            throw new Error("btck_block_spent_outputs_get_transaction_spent_outputs_at unavailable");
+        }
+
+        const ptr = btck_block_spent_outputs_get_transaction_spent_outputs_at(this.getHandle(), BigInt(index)) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error(`Failed to get transaction spent outputs at index ${index}`);
+        }
+
+        return new TransactionSpentOutputs(ptr, false, this);
+    }
+
+    /**
+     * Create a copy of this BlockSpentOutputs instance.
+     *
+     * @returns A new instance pointing to a duplicated native block spent outputs allocation.
      */
     override copy(): this {
         return super.copy();
