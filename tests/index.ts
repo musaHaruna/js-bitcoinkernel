@@ -30,3 +30,6 @@ import "./test-chain.js"
 
 // Run Validation tests
 import "./test-validation.js"
+
+// Run Context tests
+import "./test-context.js"
