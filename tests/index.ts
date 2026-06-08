@@ -24,3 +24,6 @@ import "./test-transaction.js";
 
 // Run Log tests
 import "./test-log.js";
+
+// Run Chain tests
+import "./test-chain.js"
