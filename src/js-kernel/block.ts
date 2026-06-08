@@ -674,6 +674,81 @@ export class BlockTreeEntry extends KernelOpaquePtr {
 }
 
 /**
+ * A lazily-evaluated sequence view over the vector of transactions contained within a block.
+ *
+ * This collection implements a memory-efficient lookahead window providing random indexed access 
+ * to individual transactions. Instead of instantiating all transaction wrappers simultaneously on 
+ * block loading, it dynamically reads pointer references from the native layer on-demand and 
+ * memoizes the sequence length to minimize foreign function interface (FFI) overhead.
+ */
+export class TransactionSequence extends LazySequence<Transaction> {
+    /** The parent block architecture holding the native transaction storage array. */
+    private _block: Block;
+    /** Memoized sequence size storage to optimize sequence boundary checks. */
+    private _cachedLen?: number;
+
+    /**
+     * Create a lazy transaction sequence view for a block.
+     *
+     * @param block - The parent block instance containing the transaction vector.
+     */
+    constructor(block: Block) {
+        super();
+        this._block = block;
+    }
+
+    /**
+     * The total number of transactions committed within this block.
+     * * Requested from the native library boundary on the first call and cached for 
+     * subsequent evaluations to ensure subsequent length queries resolve in O(1) time.
+     *
+     * @returns The evaluated array size integer.
+     * @throws {Error} If `btck_block_count_transactions` function bindings are missing.
+     */
+    get length(): number {
+        if (this._cachedLen === undefined) {
+            if (!btck_block_count_transactions) {
+                throw new Error("btck_block_count_transactions unavailable");
+            }
+
+            // Cast to 'any' to bypass cross-subclass protected access restrictions
+            const count = btck_block_count_transactions((this._block as any).getHandle()) as bigint;
+            this._cachedLen = Number(count);
+        }
+        return this._cachedLen;
+    }
+
+    /**
+     * Retrieve a transaction entry located at a specific positional index offset.
+     * * This method fulfills the internal abstraction contract of the base `LazySequence`.
+     *
+     * @param index - The zero-based array index position to evaluate.
+     * @returns A `Transaction` instance configured as a non-owning view bound to the parent block's lifecycle.
+     * @throws {RangeError} If the index argument drops below 0 or goes out of bounds.
+     * @throws {Error} If the native FFI function bindings are missing or pointer extraction fails.
+     */
+    public override getItem(index: number): Transaction {
+        if (this._cachedLen !== undefined && (index < 0 || index >= this._cachedLen)) {
+            throw new RangeError(`Index out of bounds: ${index}`);
+        }
+
+        if (!btck_block_get_transaction_at) {
+            throw new Error("btck_block_get_transaction_at unavailable");
+        }
+
+        // Cast to 'any' to bypass cross-subclass protected access restrictions
+        const txPtr = btck_block_get_transaction_at((this._block as any).getHandle(), BigInt(index)) as bigint;
+
+        if (txPtr === 0n) {
+            throw new Error(`Failed to get transaction at index ${index}`);
+        }
+
+        // We do not own the pointer (ownsPtr = false) and tie its lifetime to the parent block context
+        return new Transaction(txPtr, false, this._block);
+    }
+}
+
+/**
  * Bitflags controlling optional context-free validation checks performed on a block structure.
  *
  * "Context-free" checks are structural verifications that can be evaluated on an isolated block 
@@ -803,6 +878,16 @@ export class Block extends KernelOpaquePtr {
     }
 
     /**
+     * Access the full underlying transaction vector via a streaming sequence view.
+     *
+     * @returns A {@link TransactionSequence} proxy enabling lazy lookahead evaluation of the 
+     * block's transaction arrays, inclusive of the initial positional coinbase entry.
+     */
+    get transactions(): TransactionSequence {
+        return new TransactionSequence(this);
+    }
+
+    /**
      * Serialize the complete internal block layout back into its raw binary network representation.
      *
      * Orchestrates an unmanaged-to-managed stream pipeline. The native engine passes dynamic memory 
@@ -897,6 +982,15 @@ export class Block extends KernelOpaquePtr {
         }
 
         return new Transaction(ptr, false, this);
+    }
+
+    /**
+     * Generate a brief diagnostic layout summary of the block properties.
+     *
+     * @returns A string capturing the big-endian hexadecimal block identifier alongside transaction count sizes.
+     */
+    override toString(): string {
+        return `<Block hash=${this.blockHash.toString()} txs=${this.transactions.length}>`;
     }
 
     /**
