@@ -12,9 +12,6 @@ hero:
     - theme: alt
       text: API Reference
       link: /api/overview
-    - theme: alt
-      text: View Examples
-      link: /tutorials/examples
 
 features:
   - title: Native Bitcoin Core kernel

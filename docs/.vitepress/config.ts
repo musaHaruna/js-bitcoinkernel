@@ -34,7 +34,6 @@ export default defineConfig({
 
     nav: [
       { text: "Guide", link: "/guide/introduction" },
-      { text: "Tutorials", link: "/tutorials/validating-blocks" },
       { text: "API", link: "/api/overview" },
       { text: "GitHub", link: repo },
     ],
