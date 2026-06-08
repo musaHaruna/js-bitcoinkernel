@@ -33,3 +33,6 @@ import "./test-validation.js"
 
 // Run Context tests
 import "./test-context.js"
+
+// Run Init tests
+import "./test-init.js"
