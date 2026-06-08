@@ -1,3 +1,4 @@
+import { BlockTreeEntry } from "./block.js";
 import { Context } from "./context.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import {
@@ -10,8 +11,12 @@ import {
     btck_chainstate_manager_options_set_wipe_dbs,
     btck_chainstate_manager_options_set_worker_threads_num,
     btck_chainstate_manager_options_update_block_tree_db_in_memory,
-    btck_chainstate_manager_options_update_chainstate_db_in_memory
+    btck_chainstate_manager_options_update_chainstate_db_in_memory,
+    btck_chain_contains,
+    btck_chain_get_by_height,
+    btck_chain_get_height
  } from "./ffi/bindings.js";
+import { LazySequence } from "./util/sequence.js";
 
 /**
  * Enumeration of supported Bitcoin network types.
@@ -271,5 +276,97 @@ export class ChainstateManagerOptions extends KernelOpaquePtr {
             this.getHandle(),
             chainstateDbInMemory ? 1 : 0
         );
+    }
+}
+
+/**
+ * A live, dynamic view of the currently active consensus blockchain.
+ *
+ * This class wraps an unmanaged pointer representing the "best-known" canonical chain 
+ * (the main branch) currently tracked by the native engine. It provides high-speed, 
+ * height-based lookups to individual block index nodes.
+ *
+ * > ### ⚠️ Data Consistency & Lifetime Warnings
+ * > * **Dependent Lifetime:** This chain instance is a non-owning view whose operational 
+ * >   validity is tied strictly to the lifetime of the `ChainstateManager` it was extracted from.
+ * > * **Reorg Volatility:** Because this object tracks the live active tip, its composition 
+ * >   is fluid. Read data is only guaranteed to be consistent *until* the underlying 
+ * >   manager processes new blocks or encounters a blockchain reorganization (re-org), which 
+ * >   can cause previously valid height indexes to point to entirely different blocks.
+ */
+export class Chain extends KernelOpaquePtr {
+    /**
+     * Wrap an existing native Chain pointer handle.
+     *
+     * Typically instantiated via native internal factory bindings or parent state observers.
+     *
+     * @param ptr - The unmanaged native memory handle address.
+     * @param ownsPtr - Whether this wrapper governs the destruction of the pointer. Defaults to true.
+     * @param parent - The parent memory manager context pinning this view's lifecycle window. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null) {
+        super(ptr, ownsPtr ?? true, parent);
+    }
+
+    /**
+     * The absolute height index of the active consensus chain tip.
+     *
+     * Represents the total number of blocks placed on top of the genesis block. 
+     * The genesis block itself resides at height `0`.
+     *
+     * @returns The non-negative block height integer of the tip.
+     * @throws {Error} If `btck_chain_get_height` function bindings are missing.
+     */
+    get height(): number {
+        if (!btck_chain_get_height) {
+            throw new Error("btck_chain_get_height unavailable");
+        }
+        return Number(btck_chain_get_height(this.getHandle()));
+    }
+
+    /**
+     * Look up and retrieve a historical block index entry at a specific chain height.
+     *
+     * * @note This method yields a **borrowed view** (`ownsPtr = false`) directly dependent 
+     * on this parent chain's visibility window. Do not preserve this instance beyond the scope 
+     * of a block processing cycle.
+     *
+     * @param height - The targeted blockchain height integer to query. Must be between `0` and `this.height`.
+     * @returns A non-owning {@link BlockTreeEntry} view mapping the block node at the requested height.
+     * @throws {Error} If native FFI bindings are missing or pointer extraction fails (returns a null pointer).
+     */
+    _getByHeight(height: number): BlockTreeEntry {
+        if (!btck_chain_get_by_height) {
+            throw new Error("btck_chain_get_by_height unavailable");
+        }
+
+        const ptr = btck_chain_get_by_height(this.getHandle(), height) as bigint;
+        if (ptr === 0n) {
+            throw new Error(`Failed to get BlockTreeEntry at height ${height}`);
+        }
+
+        // Returns a dependent view tied to this chain's lifetime
+        return new BlockTreeEntry(ptr, false, this);
+    }
+
+    /**
+     * The total number of blocks currently recorded within the active chain path.
+     *
+     * This count includes all verified ledger checkpoints, mapping exactly to `height + 1` 
+     * to offset the zero-indexed genesis block boundary.
+     *
+     * @returns The dynamic block count size integer.
+     */
+    get length(): number {
+        return this.height + 1;
+    }
+
+    /**
+     * Generate a brief diagnostic property readout of the chain view.
+     *
+     * @returns A string capturing the active chain tip height.
+     */
+    override toString(): string {
+        return `<Chain height=${this.height}>`;
     }
 }
