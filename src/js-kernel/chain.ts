@@ -1,4 +1,4 @@
-import { BlockTreeEntry } from "./block.js";
+import { Block, BlockTreeEntry, BlockValidationState } from "./block.js";
 import { Context } from "./context.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import {
@@ -6,16 +6,27 @@ import {
     btck_chain_parameters_destroy,
     btck_chain_parameters_copy,
     btck_chain_parameters_get_consensus_params,
+
     btck_chainstate_manager_options_create,
     btck_chainstate_manager_options_destroy,
     btck_chainstate_manager_options_set_wipe_dbs,
     btck_chainstate_manager_options_set_worker_threads_num,
     btck_chainstate_manager_options_update_block_tree_db_in_memory,
     btck_chainstate_manager_options_update_chainstate_db_in_memory,
+
     btck_chain_contains,
     btck_chain_get_by_height,
-    btck_chain_get_height
+    btck_chain_get_height,
+    
+    btck_chainstate_manager_create,
+    btck_chainstate_manager_destroy,
+    btck_chainstate_manager_get_active_chain,
+    btck_chainstate_manager_get_best_entry,
+    btck_chainstate_manager_import_blocks,
+    btck_chainstate_manager_process_block,
+    btck_chainstate_manager_process_block_header
  } from "./ffi/bindings.js";
+import { ProcessBlockException, ProcessBlockHeaderException } from "./util/exceptions.js";
 import { LazySequence } from "./util/sequence.js";
 
 /**
@@ -494,5 +505,215 @@ export class BlockTreeEntrySequence extends LazySequence<BlockTreeEntry> {
         for (let i = 0; i < len; i++) {
             yield this.getItem(i);
         }
+    }
+}
+
+/**
+ * Central manager orchestrating blockchain validation, storage engines, and ledger state retrieval.
+ *
+ * The `ChainstateManager` serves as the primary coordination hub for all consensus-critical 
+ * operations within the system. It anchors and maintains the structural integrity of:
+ * * **The Block Index Graph (`BlockTreeEntryMap`):** A database tracking all validly received headers.
+ * * **The UTXO Set:** The database storing active unspent transaction outputs.
+ * * **The Active Chain View (`Chain`):** The canonical ledger tip containing the most accumulated proof-of-work.
+ *
+ * This class maps directly to the core validation state machine and is engineered to be **completely thread-safe**, 
+ * allowing seamless access and query capabilities from multiple concurrent JavaScript/Worker execution contexts.
+ */
+export class ChainstateManager extends KernelOpaquePtr {
+    protected static override destroyFn = btck_chainstate_manager_destroy as (ptr: bigint) => void;
+
+    /** Internal reference maintaining the core context to prevent V8 from garbage-collecting FFI callback trampolines. */
+    private _context: Context | null = null;
+
+    /**
+     * Wrap an existing native ChainstateManager pointer handle.
+     *
+     * @param ptr - The unmanaged native memory handle address.
+     * @param ownsPtr - Whether this wrapper actively governs the destruction of the pointer.
+     * @param parent - The structural parent object pinning this view's visibility window.
+     */
+    constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null);
+    /**
+     * Instantiate a fresh native validation engine directly from a configuration options builder.
+     *
+     * @param chainManOpts - Pre-configured options specifying database directories, threads, and memory status.
+     */
+    constructor(chainManOpts: ChainstateManagerOptions);
+    constructor(arg1: bigint | ChainstateManagerOptions, arg2?: boolean, arg3: KernelOpaquePtr | null = null) {
+        if (arg1 instanceof ChainstateManagerOptions) {
+            if (!btck_chainstate_manager_create) {
+                throw new Error("btck_chainstate_manager_create unavailable");
+            }
+
+            // Extract the options pointer handle using the peer bypass rule
+            const optionsHandle = (arg1 as any).getHandle();
+            const ptr = btck_chainstate_manager_create(optionsHandle) as bigint;
+
+            if (ptr === 0n) {
+                throw new Error("Failed to create native ChainstateManager");
+            }
+
+            super(ptr, true, null);
+            // Link context from options to prevent garbage collection
+            this._context = (arg1 as any)._context;
+        } else {
+            const ownsPtr = typeof arg2 === "boolean" ? arg2 : true;
+            super(arg1 as bigint, ownsPtr, arg3);
+        }
+    }
+
+    /**
+     * The block entry node representing the tip of the chain with the highest cumulative proof-of-work.
+     *
+     * This field represents the globally validated structural apex, regardless of whether it is 
+     * fully connected to the active chain yet.
+     *
+     * * @note This method yields a **borrowed view** (`ownsPtr = false`) directly tied to the lifecycle 
+     * of this manager instance.
+     *
+     * @returns A non-owning {@link BlockTreeEntry} view mapping the best-known block node.
+     * @throws {Error} If native lookup bindings are missing or pointer parsing resolves to null.
+     */
+    get bestEntry(): BlockTreeEntry {
+        if (!btck_chainstate_manager_get_best_entry) {
+            throw new Error("btck_chainstate_manager_get_best_entry unavailable");
+        }
+
+        const ptr = btck_chainstate_manager_get_best_entry(this.getHandle()) as bigint;
+        if (ptr === 0n) {
+            throw new Error("Failed to get best BlockTreeEntry pointer");
+        }
+
+        return new BlockTreeEntry(ptr, false, this);
+    }
+
+    /**
+     * Extract a live view of the current canonical active consensus blockchain.
+     *
+     * * @note Returns a **dependent view** whose validation state fluctuates dynamically with the engine's processing loop.
+     *
+     * @returns A non-owning {@link Chain} view representing the best-work validated chain history.
+     * @throws {Error} If native lookup bindings are missing or pointer parsing resolves to null.
+     */
+    getActiveChain(): Chain {
+        if (!btck_chainstate_manager_get_active_chain) {
+            throw new Error("btck_chainstate_manager_get_active_chain unavailable");
+        }
+
+        const ptr = btck_chainstate_manager_get_active_chain(this.getHandle()) as bigint;
+        if (ptr === 0n) {
+            throw new Error("Failed to get active Chain pointer");
+        }
+
+        return new Chain(ptr, false, this);
+    }
+
+    /**
+     * Synchronously import a batch of offline block storage files (`blk?????.dat`) into the index.
+     *
+     * Marshals an array of string-like paths across the FFI layer. It splits the data into 
+     * raw continuous UTF-8 byte buffers alongside a matching explicit length array to accommodate 
+     * C-level pointer array expectations (`const char**` paired with array lengths).
+     *
+     * @param paths - An array of filesystem path strings or path wrapper objects containing target blocks.
+     * @returns True if the full batch file import sequence completed successfully without data errors.
+     * @throws {Error} If `btck_chainstate_manager_import_blocks` FFI bindings are unavailable.
+     */
+    importBlocks(paths: { toString(): string }[]): boolean {
+        if (!btck_chainstate_manager_import_blocks) {
+            throw new Error("btck_chainstate_manager_import_blocks unavailable");
+        }
+
+        // Convert path strings into unique UTF-8 byte buffers
+        const encodedPaths = paths.map(p => Buffer.from(p.toString(), "utf8"));
+        
+        // Build the array mapping lengths (`uint64*`)
+        const pathLengths = new BigUint64Array(encodedPaths.map(buf => BigInt(buf.length)));
+
+        // Pass JavaScript array of Buffers directly matching C's `const char**` setup in Koffi
+        const result = btck_chainstate_manager_import_blocks(
+            this.getHandle(),
+            encodedPaths,
+            pathLengths,
+            BigInt(paths.length)
+        );
+
+        return result !== 0;
+    }
+
+    /**
+     * Submit a full consensus block to the manager for formal validation, indexing, and persistent caching.
+     *
+     * This orchestrates full verification sweeps including checking inputs against active UTXOs, 
+     * evaluating scripts, validating contexts, and committing updates to disk storage. It allocates a 
+     * mutable `Int32Array` output pointer across the boundary to receive the flag indicating whether this 
+     * block represents a novel addition to our local system databases.
+     *
+     * @param block - The full transaction-inclusive block wrapper instance to evaluate.
+     * @returns True if the block is entirely new and was successfully stored; false if it was a known duplicate.
+     * @throws {ProcessBlockException} If native consensus processing errors out or hits corruption thresholds.
+     */
+    processBlock(block: Block): boolean {
+        if (!btck_chainstate_manager_process_block) {
+            throw new Error("btck_chainstate_manager_process_block unavailable");
+        }
+
+        // Allocate a mutable Int32 native reference array acting as the `int32*` out-pointer
+        const isNewBlockOut = new Int32Array(1);
+
+        const result = btck_chainstate_manager_process_block(
+            this.getHandle(),
+            (block as any).getHandle(),
+            isNewBlockOut
+        );
+
+        if (result !== 0) {
+            throw new ProcessBlockException(result);
+        }
+
+        return Boolean(isNewBlockOut[0]);
+    }
+
+    /**
+     * Submit an isolated block header to the manager for validation and structure tracking.
+     *
+     * Evaluates initial headers to ensure they comply with network parameters, difficulty expectations, 
+     * and valid chaining targets before extending the block tree hierarchy. This optimization prevents full-block 
+     * download requirements for non-viable paths.
+     *
+     * @param header - The block header instance structure targeting verification.
+     * @returns A fresh, **fully-owned** {@link BlockValidationState} tracking error flags and audit benchmarks.
+     * @throws {ProcessBlockHeaderException} If native processing execution encounters an unrecoverable structural fault.
+     */
+    processBlockHeader(header: any): BlockValidationState {
+        if (!btck_chainstate_manager_process_block_header) {
+            throw new Error("btck_chainstate_manager_process_block_header unavailable");
+        }
+
+        // Bypass the strict static context checking using 'as any'
+        const state = (BlockValidationState as any).create() as BlockValidationState;
+
+        const result = btck_chainstate_manager_process_block_header(
+            this.getHandle(),
+            (header as any).getHandle(),
+            (state as any).getHandle()
+        );
+
+        if (result !== 0) {
+            state.dispose();
+            throw new ProcessBlockHeaderException(result);
+        }
+
+        return state;
+    }
+
+    /**
+     * Return a brief diagnostic summary layout of the chainstate manager instance.
+     *
+     * @returns A string capturing the raw base-16 memory handle pointer index tracking this entity.
+     */
+    override toString(): string {
+        return `<ChainstateManager handle=${this.getHandle()}>`;
     }
 }
