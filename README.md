@@ -1,11 +1,11 @@
-# js-bitcoin-kernel
+# js-bitcoinkernel
 
 A TypeScript a wrapper around [ libbitcoinkernel](https://github.com/bitcoin/bitcoin/pull/30595) that provides safe, structured access to native Bitcoin data structures through a C FFI layer.
 
 It wraps a native Bitcoin kernel library using `koffi` and exposes high-level objects such as `BlockHash` and `BlockHeader` for use in JavaScript/TypeScript applications.
 
 > [!WARNING]
-> `js-bitcoin-kernel` is highly experimental software, and should in no
+> `js-bitcoinkernel` is highly experimental software, and should in no
 > way be used in software that is consensus-critical, deals with
 > (mainnet) coins, or is generally used in any production environment.
 
@@ -41,7 +41,7 @@ The system is composed of three main layers:
 - Handles pointer communication between JS and native code
 
 #### 3. JavaScript Kernel Layer
-- Wraps raw pointers into safe objects:
+- Wraps raw pointers into safe objects e.g:
   - `BlockHash`
   - `BlockHeader`
 - Manages memory lifecycle (create, copy, dispose)
@@ -141,23 +141,19 @@ npm link js-bitcoin-kernel
 ## Example: Basic Usage
 
 ```javascript
-import { BlockHeader, BlockHash } from "js-bitcoin-kernel";
+import { BlockHeader } from "js-bitcoinkernel";
 
-const header = new BlockHeader({
-  version: 0x20000000,
-  prevBlockHash: BlockHash.fromHex(
-    "0000000000000000000a16b1c3f2a9c0c8f8f8a7e9d6c4b3a2f1e0d9c8b7a6f5"
-  ),
-  merkleRoot: BlockHash.fromHex(
-    "4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f90123456789abcdefabcdefabcdefabcd"
-  ),
-  timestamp: 1700000000,
-  bits: 0x1d00ffff,
-  nonce: 2083236893,
-});
+const headerHex =
+  "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299";
 
-console.log("Block Hash:", header.getHash().toHex());
+const header = BlockHeader.fromBytes(Buffer.from(headerHex, "hex"));
+
+console.log("Block hash:", header.blockHash.toString());
+console.log("Previous hash:", header.prevHash.toString());
+console.log("Timestamp:", header.timestamp.toISOString());
 console.log("Version:", header.version);
+
+header.dispose();
 ```
 
 ## References
