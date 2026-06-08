@@ -52,6 +52,51 @@ import { Transaction, TransactionSpentOutputs } from "./transaction.js";
 import { LazySequence } from "./util/sequence.js";
 
 /**
+ * Bitflags controlling optional context-free validation checks performed on a block structure.
+ *
+ * "Context-free" checks are structural verifications that can be evaluated on an isolated block 
+ * immediately upon receipt over the network, completely independent of the current active chain state, 
+ * block height, or UTXO database availability.
+ * * Multiple flags can be packed together using bitwise OR operations (e.g., `BlockCheckFlags.POW | BlockCheckFlags.MERKLE`).
+ */
+export enum BlockCheckFlags {
+    /** * Execute only minimal baseline structural verification rules.
+     * * Ensures the raw block size complies with maximum limits and that the transaction vector is non-empty.
+     */
+    BASE = 0,
+    
+    /** * Execute Proof-of-Work hash threshold verification.
+     * * Validates that the computed block header double-SHA256 hash actually satisfies the difficulty target encoded 
+     * inside the header's `nBits` field.
+     */
+    POW = 1 << 0,
+    
+    /** * Reconstruct and verify the Merkle Root architecture.
+     * * Re-hashes the complete list of transactions inside the block to guarantee parity with the `hashMerkleRoot` field 
+     * committed in the header. Crucially, this pass screens for malicious Merkle tree transaction list mutation attacks.
+     */
+    MERKLE = 1 << 1,
+    
+    /** Enable all optional structural, cryptographic, and mathematical context-free block checks. */
+    ALL = (1 << 0) | (1 << 1),
+}
+
+/**
+ * High-level macro resolution of an individual validation pipeline pass.
+ *
+ * Indicates whether an unmanaged block structure successfully satisfied consensus,
+ * definitively violated validation invariants, or stalled due to operational environmental issues.
+ */
+export enum ValidationMode {
+    /** The target structure passed all structural, contextual, and cryptographic validation passes. */
+    VALID = 0,
+    /** Validation failed due to explicit script, consensus, or context rule violations. */
+    INVALID = 1,
+    /** An internal execution failure or resource issue occurred during evaluation (e.g., disk I/O failure). */
+    INTERNAL_ERROR = 2
+}
+
+/**
  * Unmanaged wrapper for a Bitcoin Block Hash identifier.
  *
  * Encapsulates a fixed 32-byte crypto digest uniquely identifying a block. 
@@ -355,21 +400,6 @@ export class BlockHeader extends KernelOpaquePtr {
     override toString(): string {
         return `BlockHeader hash=${this.blockHash.toString()}`;
     }
-}
-
-/**
- * High-level macro resolution of an individual validation pipeline pass.
- *
- * Indicates whether an unmanaged block structure successfully satisfied consensus,
- * definitively violated validation invariants, or stalled due to operational environmental issues.
- */
-export enum ValidationMode {
-    /** The target structure passed all structural, contextual, and cryptographic validation passes. */
-    VALID = 0,
-    /** Validation failed due to explicit script, consensus, or context rule violations. */
-    INVALID = 1,
-    /** An internal execution failure or resource issue occurred during evaluation (e.g., disk I/O failure). */
-    INTERNAL_ERROR = 2
 }
 
 /**
@@ -754,36 +784,6 @@ export class TransactionSequence extends LazySequence<Transaction> {
         // We do not own the pointer (ownsPtr = false) and tie its lifetime to the parent block context
         return new Transaction(txPtr, false, this._block);
     }
-}
-
-/**
- * Bitflags controlling optional context-free validation checks performed on a block structure.
- *
- * "Context-free" checks are structural verifications that can be evaluated on an isolated block 
- * immediately upon receipt over the network, completely independent of the current active chain state, 
- * block height, or UTXO database availability.
- * * Multiple flags can be packed together using bitwise OR operations (e.g., `BlockCheckFlags.POW | BlockCheckFlags.MERKLE`).
- */
-export enum BlockCheckFlags {
-    /** * Execute only minimal baseline structural verification rules.
-     * * Ensures the raw block size complies with maximum limits and that the transaction vector is non-empty.
-     */
-    BASE = 0,
-    
-    /** * Execute Proof-of-Work hash threshold verification.
-     * * Validates that the computed block header double-SHA256 hash actually satisfies the difficulty target encoded 
-     * inside the header's `nBits` field.
-     */
-    POW = 1 << 0,
-    
-    /** * Reconstruct and verify the Merkle Root architecture.
-     * * Re-hashes the complete list of transactions inside the block to guarantee parity with the `hashMerkleRoot` field 
-     * committed in the header. Crucially, this pass screens for malicious Merkle tree transaction list mutation attacks.
-     */
-    MERKLE = 1 << 1,
-    
-    /** Enable all optional structural, cryptographic, and mathematical context-free block checks. */
-    ALL = (1 << 0) | (1 << 1),
 }
 
 /**
