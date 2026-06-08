@@ -571,6 +571,36 @@ export class ChainstateManager extends KernelOpaquePtr {
     }
 
     /**
+     * Access the index map containing all historical block headers recognized by the engine.
+     *
+     * @returns A {@link BlockTreeEntryMap} proxy exposing a dictionary-like lookup mechanism 
+     * using big-endian block hash keys.
+     */
+    get blockTreeEntries(): BlockTreeEntryMap {
+        return new BlockTreeEntryMap(this);
+    }
+
+    /**
+     * Access the full block raw serialization disk reader.
+     *
+     * @returns A {@link BlockMap} proxy exposing a dictionary-like lookup mechanism to read 
+     * complete consensus blocks from disk via block hashes.
+     */
+    get blocks(): BlockMap {
+        return new BlockMap(this);
+    }
+
+    /**
+     * Access the historical block spent outputs (undo/reorg rollback database).
+     *
+     * @returns A {@link BlockSpentOutputsMap} proxy providing dictionary-like access to the 
+     * outputs consumed by previous block transactions.
+     */
+    get blockSpentOutputs(): BlockSpentOutputsMap {
+        return new BlockSpentOutputsMap(this);
+    }
+
+    /**
      * The block entry node representing the tip of the chain with the highest cumulative proof-of-work.
      *
      * This field represents the globally validated structural apex, regardless of whether it is 
