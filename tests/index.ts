@@ -21,3 +21,6 @@ import "./test-script.js";
 
 // Run Transaction tests
 import "./test-transaction.js";
+
+// Run Log tests
+import "./test-log.js";
