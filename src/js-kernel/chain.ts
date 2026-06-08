@@ -1,4 +1,4 @@
-import { Block, BlockTreeEntry, BlockValidationState } from "./block.js";
+import { Block, BlockHash, BlockSpentOutputs, BlockTreeEntry, BlockValidationState } from "./block.js";
 import { Context } from "./context.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import {
@@ -25,8 +25,13 @@ import {
     btck_chainstate_manager_import_blocks,
     btck_chainstate_manager_process_block,
     btck_chainstate_manager_process_block_header,
+    btck_chainstate_manager_get_block_tree_entry_by_hash,
+
     btck_block_destroy,
-    btck_block_read
+    btck_block_read,
+
+    btck_block_spent_outputs_destroy,
+    btck_block_spent_outputs_read,
  } from "./ffi/bindings.js";
 import { ProcessBlockException, ProcessBlockHeaderException } from "./util/exceptions.js";
 import { LazySequence } from "./util/sequence.js";
@@ -798,7 +803,7 @@ export class BlockMap extends MapBase {
     /**
      * Fetch and read a full consensus block from disk using its metadata entry descriptor.
      *
-     * > ### 🔄 Pointer Ownership Handover
+     * > ### Pointer Ownership Handover
      * > Unlike `has(key)`, a successful lookup here transfers complete lifecycle ownership (`ownsPtr = true`) 
      * > over to the resulting JavaScript {@link Block} instance. The unmanaged allocation remains pinned until 
      * > the JS wrapper is manually disposed of or swept away during standard V8 garbage collection cycles.
@@ -822,5 +827,150 @@ export class BlockMap extends MapBase {
 
         // Returns an owned instance wrapper (ownsPtr = true)
         return new Block(ptr, true, null);
+    }
+}
+
+/**
+ * A dictionary-like interface for reading block spent outputs (also referred to as "undo data") from disk.
+ *
+ * Undo data is generated whenever a non-genesis block is connected to the chain state. It saves the 
+ * exact UTXO configurations mutated or consumed by the transactions within that block, allowing the 
+ * consensus engine to safely roll back the state of the ledger during blockchain reorganizations (re-orgs).
+ */
+export class BlockSpentOutputsMap extends MapBase {
+    constructor(chainman: ChainstateManager) {
+        super(chainman);
+    }
+
+    /**
+     * Check if a specific block's spent output undo data can be found and read from disk.
+     *
+     * > ### ⚠️ Genesis Exception & Memory Handling
+     * > * **Genesis Exclusion:** The genesis block (`height === 0`) never consumes inputs, 
+     * >   so it instantly returns `false` without making a native cross-boundary call.
+     * > * **Transient Cleanup:** Successful hits via `btck_block_spent_outputs_read` allocate a fully 
+     * >   **owned** transient memory handle. Because this method only evaluates presence, the allocated 
+     * >   pointer is immediately released via `btck_block_spent_outputs_destroy(ptr)` to prevent memory leaks.
+     *
+     * @param key - The block tree node tracking the target block.
+     * @returns True if the undo dataset exists on disk and is accessible; false otherwise.
+     * @throws {Error} If native FFI bindings are unavailable.
+     */
+    has(key: BlockTreeEntry): boolean {
+        if (key.height === 0) {
+            return false;
+        }
+
+        if (!btck_block_spent_outputs_read) {
+            throw new Error("btck_block_spent_outputs_read unavailable");
+        }
+
+        // Cast to 'any' for peer-access to extract the protected handle
+        const chainmanHandle = (this._chainman as any).getHandle();
+        const keyHandle = (key as any).getHandle();
+
+        const ptr = btck_block_spent_outputs_read(chainmanHandle, keyHandle) as bigint;
+        if (ptr !== 0n) {
+            if (btck_block_spent_outputs_destroy) {
+                btck_block_spent_outputs_destroy(ptr);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Read and construct the spent output undo data for a specific block tree index from disk.
+     *
+     * > ### Pointer Ownership Transfer
+     * > A successful data retrieval session hands complete structural lifecycle control (`ownsPtr = true`) 
+     * > over to the returned JavaScript {@link BlockSpentOutputs} instance wrapper.
+     *
+     * @param key - The block tree node tracking the target block to read.
+     * @returns A fresh, **fully-owned** {@link BlockSpentOutputs} instance carrying the target undo payload.
+     * @throws {RangeError} If the lookup targets the genesis block (`height === 0`).
+     * @throws {Error} If native FFI bindings are missing or the disk read routine fails (returns a null pointer).
+     */
+    get(key: BlockTreeEntry): BlockSpentOutputs {
+        if (key.height === 0) {
+            throw new RangeError("Genesis block does not have BlockSpentOutputs data");
+        }
+
+        if (!btck_block_spent_outputs_read) {
+            throw new Error("btck_block_spent_outputs_read unavailable");
+        }
+
+        const chainmanHandle = (this._chainman as any).getHandle();
+        const keyHandle = (key as any).getHandle();
+
+        const ptr = btck_block_spent_outputs_read(chainmanHandle, keyHandle) as bigint;
+        if (ptr === 0n) {
+            throw new Error(`Error reading BlockSpentOutputs for ${key.toString()} from disk`);
+        }
+
+        return new BlockSpentOutputs(ptr, true, null);
+    }
+}
+
+/**
+ * A dictionary-like lookup view mapping unique block hashes to their internal index graph metadata entries.
+ *
+ * Exposes read-only access to the comprehensive unmanaged block headers index repository monitored 
+ * by the core `ChainstateManager`. This lookup matrix includes all branches discovered by the system—not 
+ * just the blocks actively tied to the active canonical mainchain tip.
+ */
+export class BlockTreeEntryMap extends MapBase {
+    constructor(chainman: ChainstateManager) {
+        super(chainman);
+    }
+
+    /**
+     * Evaluate whether a specific, raw block hash exists anywhere inside the local block tree index graph.
+     *
+     * @param key - The domain-level {@link BlockHash} instance serving as the lookup key.
+     * @returns True if the target block hash is mapped within the engine index; false otherwise.
+     * @throws {Error} If native `btck_chainstate_manager_get_block_tree_entry_by_hash` bindings are unavailable.
+     */
+    has(key: BlockHash): boolean {
+        if (!btck_chainstate_manager_get_block_tree_entry_by_hash) {
+            throw new Error("btck_chainstate_manager_get_block_tree_entry_by_hash unavailable");
+        }
+
+        // Apply peer-access bypass rules to extract protected pointer handles
+        const chainmanHandle = (this._chainman as any).getHandle();
+        const keyHandle = (key as any).getHandle();
+
+        const ptr = btck_chainstate_manager_get_block_tree_entry_by_hash(chainmanHandle, keyHandle) as bigint;
+        
+        return ptr !== 0n;
+    }
+
+    /**
+     * Retrieve a block tree index metadata descriptor directly by querying its block hash.
+     *
+     * > ### Dependent View Rule
+     * > This method yields a **borrowed view** (`ownsPtr = false`) that is anchored directly to the memory 
+     * > lifetime of the parent `ChainstateManager`. The pointer must not be stored long-term by the 
+     * > consuming runtime environment.
+     *
+     * @param key - The domain-level {@link BlockHash} target key to isolate.
+     * @returns A non-owning {@link BlockTreeEntry} view wrapping the matched native block metadata struct.
+     * @throws {Error} Mimicking a Python `KeyError` if the hash is completely absent from the block index.
+     */
+    get(key: BlockHash): BlockTreeEntry {
+        if (!btck_chainstate_manager_get_block_tree_entry_by_hash) {
+            throw new Error("btck_chainstate_manager_get_block_tree_entry_by_hash unavailable");
+        }
+
+        const chainmanHandle = (this._chainman as any).getHandle();
+        const keyHandle = (key as any).getHandle();
+
+        const ptr = btck_chainstate_manager_get_block_tree_entry_by_hash(chainmanHandle, keyHandle) as bigint;
+        if (ptr === 0n) {
+            throw new Error(`KeyError: ${key.toString()} not found`);
+        }
+
+        // Returns a dependent view wrapper (ownsPtr = false, parent = this._chainman)
+        return new BlockTreeEntry(ptr, false, this._chainman);
     }
 }
