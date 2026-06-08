@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 const repo = "https://github.com/musaHaruna/js-bitcoinkernel";
 
 export default defineConfig({
-  title: "js-bitcoin-kernel",
+  title: "js-bitcoinkernel",
   description: "TypeScript bindings for Bitcoin Core libbitcoinkernel.",
   lang: "en-US",
   base: process.env.VITEPRESS_BASE ?? "/",
