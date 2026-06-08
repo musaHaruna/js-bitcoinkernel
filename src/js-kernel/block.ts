@@ -40,7 +40,8 @@ import {
     btck_block_get_hash,
     btck_block_get_header,
     btck_block_to_bytes,
-
+    
+    btck_block_spent_outputs_count,
     btck_block_spent_outputs_get_transaction_spent_outputs_at,
     btck_block_spent_outputs_destroy,
     btck_block_spent_outputs_copy,
@@ -1036,6 +1037,16 @@ export class BlockSpentOutputs extends KernelOpaquePtr {
     }
 
     /**
+     * Access the inner sequence of spent outputs, organized by transaction.
+     *
+     * @returns A {@link TransactionSpentOutputsSequence} proxy enabling lazy, on-demand evaluation 
+     * of the underlying spending records, excluding the initial coinbase transaction.
+     */
+    get transactions(): TransactionSpentOutputsSequence {
+        return new TransactionSpentOutputsSequence(this);
+    }
+
+    /**
      * Direct protected array accessor to extract a specific transaction spent outputs handle from the native layer.
      *
      * @param index - Zero-based position index tracking the transaction target (excluding coinbase).
@@ -1057,11 +1068,101 @@ export class BlockSpentOutputs extends KernelOpaquePtr {
     }
 
     /**
+     * Generate a brief diagnostic summary of the block spent outputs data.
+     *
+     * @returns A string capturing the total number of tracked non-coinbase transaction records.
+     */
+    override toString(): string {
+        return `<BlockSpentOutputs txs=${this.transactions.length}>`;
+    }
+
+    /**
      * Create a copy of this BlockSpentOutputs instance.
      *
      * @returns A new instance pointing to a duplicated native block spent outputs allocation.
      */
     override copy(): this {
         return super.copy();
+    }
+}
+
+/**
+ * A lazily-evaluated sequence of spent transaction outputs (undo data) within a block.
+ *
+ * This sequence provides indexed, lookahead access to the historical outpoints consumed by 
+ * a block's transaction suite. 
+ * * > **Note on Indexing:** This sequence strictly excludes the coinbase transaction (index 0 of a block). 
+ * > Because the coinbase transaction generates new coins out of thin air rather than consuming existing 
+ * > Unspent Transaction Outputs (UTXOs), it lacks any undo data. Therefore, index `0` of this sequence 
+ * > maps to the spent outputs of the block's *first non-coinbase* transaction.
+ */
+export class TransactionSpentOutputsSequence extends LazySequence<TransactionSpentOutputs> {
+    /** The parent block spent outputs block governing the native tracking array. */
+    private blockSpentOutputs: BlockSpentOutputs;
+    /** Memoized sequence size storage to optimize boundary verification sweeps. */
+    private cachedLen?: number;
+
+    /**
+     * Create a lazy transaction spent outputs sequence view.
+     *
+     * @param blockSpentOutputs - The parent undo data context block.
+     */
+    constructor(blockSpentOutputs: BlockSpentOutputs) {
+        super();
+        this.blockSpentOutputs = blockSpentOutputs;
+    }
+
+    /**
+     * The number of transaction spent output entries available in this block.
+     * * This count is exactly equal to the total transaction count of the block minus 1 
+     * (omitting the coinbase transaction). It is fetched from the native layer on first 
+     * access and cached to allow subsequent lookups to resolve in $O(1)$ time.
+     *
+     * @returns The evaluated array size integer.
+     * @throws {Error} If `btck_block_spent_outputs_count` function bindings are missing.
+     */
+    get length(): number {
+        if (this.cachedLen === undefined) {
+            if (!btck_block_spent_outputs_count) {
+                throw new Error("btck_block_spent_outputs_count unavailable");
+            }
+
+            // Cast to 'any' to bypass cross-subclass protected access restrictions
+            const count = btck_block_spent_outputs_count((this.blockSpentOutputs as any).getHandle()) as bigint;
+            this.cachedLen = Number(count);
+        }
+        return this.cachedLen;
+    }
+
+    /**
+     * Retrieve the transaction spent outputs entry located at a specific positional offset.
+     * * This method fulfills the internal abstraction contract of the base `LazySequence`.
+     *
+     * @param index - The zero-based array index position to evaluate (relative to non-coinbase transactions).
+     * @returns A `TransactionSpentOutputs` wrapper instance configured as a non-owning view bound to the parent block's lifecycle.
+     * @throws {RangeError} If the index argument drops below 0 or exceeds the length boundaries.
+     * @throws {Error} If native FFI bindings are missing or pointer parsing resolves to null.
+     */
+    public override getItem(index: number): TransactionSpentOutputs {
+        if (this.cachedLen !== undefined && (index < 0 || index >= this.cachedLen)) {
+            throw new RangeError(`Index out of bounds: ${index}`);
+        }
+
+        if (!btck_block_spent_outputs_get_transaction_spent_outputs_at) {
+            throw new Error("btck_block_spent_outputs_get_transaction_spent_outputs_at unavailable");
+        }
+
+        // Cast to 'any' to bypass cross-subclass protected access restrictions
+        const ptr = btck_block_spent_outputs_get_transaction_spent_outputs_at(
+            (this.blockSpentOutputs as any).getHandle(),
+            BigInt(index)
+        ) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error(`Failed to get transaction spent outputs at index ${index}`);
+        }
+
+        // Unowned pointer (ownsPtr = false) with lifetime tied to the parent block spent outputs context
+        return new TransactionSpentOutputs(ptr, false, this.blockSpentOutputs);
     }
 }
