@@ -29,6 +29,9 @@ const btck_LogLevel = 'uint8';
 const btck_ChainType = 'uint8';
 const ByteArray32 = koffi.array('uint8', 32);
 const ByteArray80 = koffi.array('uint8', 80);
+const btck_ValidationMode = 'uint8';
+const btck_BlockValidationResult = 'uint32';
+const btck_BlockCheckFlags = 'uint32';
 
 /**
  * Opaque Native Types
@@ -176,6 +179,122 @@ export const btck_block_header_to_bytes = loadOptional('btck_block_header_to_byt
 
 export const btck_block_header_destroy = loadOptional('btck_block_header_destroy', () =>
     lib.func('btck_block_header_destroy', 'void', ['struct_btck_BlockHeader*'])
+);
+
+/**
+ * Block
+ */
+export const btck_block_read = loadOptional('btck_block_read', () =>
+    lib.func('btck_block_read', 'struct_btck_Block*', ['struct_btck_ChainstateManager*', 'struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_block_create = loadOptional('btck_block_create', () =>
+    lib.func('btck_block_create', 'struct_btck_Block*', ['const void*', size_t])
+);
+
+export const btck_block_copy = loadOptional('btck_block_copy', () =>
+    lib.func('btck_block_copy', 'struct_btck_Block*', ['struct_btck_Block*'])
+);
+
+export const btck_block_check = loadOptional('btck_block_check', () =>
+    lib.func('btck_block_check', int32_t, ['struct_btck_Block*', 'struct_btck_ConsensusParams*', btck_BlockCheckFlags,'struct_btck_BlockValidationState*'])
+);
+
+export const btck_block_count_transactions = loadOptional('btck_block_count_transactions', () =>
+    lib.func('btck_block_count_transactions', size_t, ['struct_btck_Block*'])
+);
+
+export const btck_block_get_transaction_at = loadOptional('btck_block_get_transaction_at', () =>
+    lib.func('btck_block_get_transaction_at', 'struct_btck_Transaction*', ['struct_btck_Block*', size_t])
+);
+
+export const btck_block_get_header = loadOptional('btck_block_get_header', () =>
+    lib.func('btck_block_get_header', 'struct_btck_BlockHeader*', ['struct_btck_Block*'])
+);
+
+export const btck_block_get_hash = loadOptional('btck_block_get_hash', () =>
+    lib.func('btck_block_get_hash', 'struct_btck_BlockHash*', ['struct_btck_Block*'])
+);
+
+export const btck_block_to_bytes = loadOptional('btck_block_to_bytes', () =>
+    lib.func('btck_block_to_bytes', int32_t, ['struct_btck_Block*', koffi.pointer(WriteBytesCb),'void*'])
+);
+
+export const btck_block_destroy = loadOptional('btck_block_destroy', () =>
+    lib.func('btck_block_destroy', 'void', ['struct_btck_Block*'])
+);
+
+/**
+ * BlockSpentOutputs
+ */
+export const btck_block_spent_outputs_read = loadOptional('btck_block_spent_outputs_read', () =>
+    lib.func('btck_block_spent_outputs_read', 'struct_btck_BlockSpentOutputs*', ['struct_btck_ChainstateManager*', 'struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_block_spent_outputs_copy = loadOptional('btck_block_spent_outputs_copy', () =>
+    lib.func('btck_block_spent_outputs_copy', 'struct_btck_BlockSpentOutputs*', ['struct_btck_BlockSpentOutputs*'])
+);
+
+export const btck_block_spent_outputs_count = loadOptional('btck_block_spent_outputs_count', () =>
+    lib.func('btck_block_spent_outputs_count', size_t, ['struct_btck_BlockSpentOutputs*'])
+);
+
+export const btck_block_spent_outputs_get_transaction_spent_outputs_at = loadOptional('btck_block_spent_outputs_get_transaction_spent_outputs_at', () =>
+    lib.func('btck_block_spent_outputs_get_transaction_spent_outputs_at', 'struct_btck_TransactionSpentOutputs*', ['struct_btck_BlockSpentOutputs*', size_t])
+);
+
+export const btck_block_spent_outputs_destroy = loadOptional('btck_block_spent_outputs_destroy', () =>
+    lib.func('btck_block_spent_outputs_destroy', 'void', ['struct_btck_BlockSpentOutputs*'])
+);
+
+/**
+ * BlockValidationState
+ */
+export const btck_block_validation_state_create = loadOptional('btck_block_validation_state_create', () =>
+    lib.func('btck_block_validation_state_create', 'struct_btck_BlockValidationState*', [])
+);
+
+export const btck_block_validation_state_get_validation_mode = loadOptional('btck_block_validation_state_get_validation_mode', () =>
+    lib.func('btck_block_validation_state_get_validation_mode', btck_ValidationMode, ['struct_btck_BlockValidationState*'])
+);
+
+export const btck_block_validation_state_get_block_validation_result = loadOptional('btck_block_validation_state_get_block_validation_result', () =>
+    lib.func('btck_block_validation_state_get_block_validation_result', btck_BlockValidationResult, ['struct_btck_BlockValidationState*'])
+);
+
+export const btck_block_validation_state_copy = loadOptional('btck_block_validation_state_copy', () =>
+    lib.func('btck_block_validation_state_copy', 'struct_btck_BlockValidationState*', ['struct_btck_BlockValidationState*'])
+);
+
+export const btck_block_validation_state_destroy = loadOptional('btck_block_validation_state_destroy', () =>
+    lib.func('btck_block_validation_state_destroy', 'void', ['struct_btck_BlockValidationState*'])
+);
+
+/**
+ * Block Tree Entry
+ */
+export const btck_block_tree_entry_get_previous = loadOptional('btck_block_tree_entry_get_previous', () =>
+    lib.func('btck_block_tree_entry_get_previous', 'struct_btck_BlockTreeEntry*', ['struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_block_tree_entry_get_block_header = loadOptional('btck_block_tree_entry_get_block_header', () =>
+    lib.func('btck_block_tree_entry_get_block_header', 'struct_btck_BlockHeader*', ['struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_block_tree_entry_get_height = loadOptional('btck_block_tree_entry_get_height', () =>
+    lib.func('btck_block_tree_entry_get_height', int32_t, ['struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_block_tree_entry_get_block_hash = loadOptional('btck_block_tree_entry_get_block_hash', () =>
+    lib.func('btck_block_tree_entry_get_block_hash', 'struct_btck_BlockHash*', ['struct_btck_BlockTreeEntry*'])
+);
+
+export const btck_block_tree_entry_equals = loadOptional('btck_block_tree_entry_equals', () =>
+    lib.func('btck_block_tree_entry_equals', int32_t, ['struct_btck_BlockTreeEntry*', 'struct_btck_BlockTreeEntry*',])
+);
+
+export const btck_block_tree_entry_get_ancestor = loadOptional('btck_block_tree_entry_get_ancestor', () =>
+    lib.func('btck_block_tree_entry_get_ancestor', 'struct_btck_BlockTreeEntry*', ['struct_btck_BlockTreeEntry*', int32_t,])
 );
 
 
