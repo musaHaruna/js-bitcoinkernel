@@ -20,34 +20,36 @@ import {
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 
 /**
- * BlockHash (Identifier for a block).
+ * Unmanaged wrapper for a Bitcoin Block Hash identifier.
  *
- * Provides safe lifecycle management and convenient conversion utilities.
+ * Encapsulates a fixed 32-byte crypto digest uniquely identifying a block. 
+ * This class safely abstracts native FFI lifecycles and handles essential formatting 
+ * conversions, bridging internal low-level little-endian byte order processing 
+ * with standard big-endian hexadecimal string representations used by RPCs and block explorers.
  */
 export class BlockHash extends KernelOpaquePtr {
     protected static override createFn = btck_block_hash_create as (...args: unknown[]) => bigint;
-
     protected static override destroyFn = btck_block_hash_destroy as (ptr: bigint) => void;
-
     protected static override copyFn = btck_block_hash_copy as (ptr: bigint) => bigint;
 
     /**
-     * Create a block hash instance wrapping a native pointer.
+     * Create a block hash wrapper instance from a native pointer.
      *
-     * @param ptr - The native pointer handle.
-     * @param ownsPtr - Whether this instance owns the lifetime of the pointer. Defaults to true.
-     * @param parent - The parent object holding this reference, if it's a borrowed view. Defaults to null.
+     * @param ptr - The native memory handle.
+     * @param ownsPtr - Whether this instance governs the lifetime of the unmanaged pointer. Defaults to true.
+     * @param parent - The parent memory boundary holding this reference, if it is a borrowed view. Defaults to null.
      */
     constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
         super(ptr, ownsPtr, parent);
     }
 
     /**
-     * Create a block hash from raw bytes.
+     * Allocate a brand new native block hash instance from a raw byte buffer.
      *
-     * @param bytes - The 32-byte block hash in little-endian byte order.
-     * @returns A new BlockHash instance.
-     * @throws {Error} If the block hash is not exactly 32 bytes, or if creation fails.
+     * @param bytes - A 32-byte array containing the block hash in little-endian network byte order.
+     * @returns A fresh, fully-owned BlockHash instance.
+     * @throws {Error} If the provided byte array is not exactly 32 bytes long, if FFI bindings 
+     * are unavailable, or if the underlying native constructor fails and returns a null pointer.
      */
     static fromBytes(bytes: Uint8Array): BlockHash {
         if (bytes.length !== 32) {
@@ -68,10 +70,10 @@ export class BlockHash extends KernelOpaquePtr {
     }
 
     /**
-     * Serialize the block hash to bytes.
+     * Serialize the underlying hash instance back into a raw binary buffer.
      *
-     * @returns The 32-byte block hash in little-endian byte order.
-     * @throws {Error} If btck_block_hash_to_bytes is unavailable.
+     * @returns A 32-byte Uint8Array tracking the block hash in little-endian network byte order.
+     * @throws {Error} If `btck_block_hash_to_bytes` function bindings are missing.
      */
     toBytes(): Uint8Array {
         if (!btck_block_hash_to_bytes) {
@@ -86,21 +88,23 @@ export class BlockHash extends KernelOpaquePtr {
     }
 
     /**
-     * Get the hexadecimal representation of the block hash.
+     * Convert the block hash into a human-readable hexadecimal string.
      *
-     * @returns The block hash as a 64-character hex string in big-endian
-     * byte order (standard Bitcoin display format).
+     * Semantics automatically reverse the little-endian consensus serialization 
+     * to match the big-endian display format standard throughout the Bitcoin ecosystem.
+     *
+     * @returns A 64-character big-endian hex string representation.
      */
     override toString(): string {
         return Buffer.from(this.toBytes()).reverse().toString("hex");
     }
 
     /**
-     * Check equality with another block hash.
+     * Evaluate value equality against an arbitrary external object.
      *
-     * @param other - Object to compare with.
-     * @returns True if both are BlockHash instances with equal values.
-     * @throws {Error} If btck_block_hash_equals is unavailable.
+     * @param other - Target candidate object evaluated for value parity.
+     * @returns True if the target instance matches type boundaries and holds an identical byte sequence.
+     * @throws {Error} If `btck_block_hash_equals` function bindings are missing.
      */
     equals(other: unknown): boolean {
         if (!(other instanceof BlockHash)) {
@@ -117,7 +121,7 @@ export class BlockHash extends KernelOpaquePtr {
     /**
      * Create a copy of this BlockHash instance.
      *
-     * @returns A new instance pointing to a duplicated native handle.
+     * @returns A new instance pointing to a duplicated native block hash handle.
      */
     override copy(): this {
         return super.copy();
@@ -125,35 +129,35 @@ export class BlockHash extends KernelOpaquePtr {
 }
 
 /**
- * BlockHeader.
+ * Unmanaged wrapper for a Bitcoin Block Header.
  *
- * Represents a parsed or constructed block header and provides
- * access to consensus-relevant fields and serialization utilities.
+ * Maps directly to the fixed 80-byte header layout dictated by core consensus rules. 
+ * Provides direct access to essential cryptographic parameters required to validate 
+ * proof-of-work, track mining difficulty transitions, and reconstruct chain historical paths.
  */
 export class BlockHeader extends KernelOpaquePtr {
     protected static override createFn = btck_block_header_create as (...args: unknown[]) => bigint;
-    
     protected static override destroyFn = btck_block_header_destroy as (ptr: bigint) => void;
-    
     protected static override copyFn = btck_block_header_copy as (ptr: bigint) => bigint;
 
     /**
-     * Create a block header instance wrapping a native pointer.
+     * Create a block header wrapper instance from a native pointer.
      *
-     * @param ptr - The native pointer handle.
-     * @param ownsPtr - Whether this instance owns the lifetime of the pointer. Defaults to true.
-     * @param parent - The parent object holding this reference, if it's a borrowed view. Defaults to null.
+     * @param ptr - The native memory handle.
+     * @param ownsPtr - Whether this instance governs the lifetime of the unmanaged pointer. Defaults to true.
+     * @param parent - The parent memory boundary holding this reference, if it is a borrowed view. Defaults to null.
      */
     constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
         super(ptr, ownsPtr, parent);
     }
 
     /**
-     * Create a block header from serialized data.
+     * Parse a new native block header block instance out of serialized consensus-format bytes.
      *
-     * @param rawHeader - The serialized block header data in consensus format. Must be 80 bytes.
-     * @returns A new BlockHeader instance.
-     * @throws {Error} If rawHeader is not exactly 80 bytes or if parsing the block header data fails.
+     * @param rawHeader - The raw byte stream under evaluation. Must be exactly 80 bytes long.
+     * @returns A fresh, fully-owned BlockHeader instance.
+     * @throws {Error} If the buffer size violates the strict 80-byte validation boundary, 
+     * if FFI bindings are missing, or if native parsing fails.
      */
     static fromBytes(rawHeader: Uint8Array): BlockHeader {
         if (rawHeader.length !== 80) {
@@ -174,10 +178,13 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * The block hash.
+     * Compute and retrieve the unique cryptographic identifier hash for this block header.
      *
-     * @returns The block hash. Owned handle.
-     * @throws {Error} If btck_block_header_get_hash is unavailable.
+     * * @note This method yields a **standalone, fully-owned copy** of the block hash 
+     * generated at the native boundary. It maintains an independent lifecycle separate from the header.
+     *
+     * @returns An independent, owned {@link BlockHash} instance.
+     * @throws {Error} If `btck_block_header_get_hash` function bindings are missing.
      */
     get blockHash(): BlockHash {
         if (!btck_block_header_get_hash) {
@@ -190,10 +197,13 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * The previous block hash.
+     * Extract the cryptographic hash reference mapping to the immediate ancestor block.
      *
-     * @returns The previous block hash. View into this header.
-     * @throws {Error} If btck_block_header_get_prev_hash is unavailable.
+     * * @note This method returns a **dependent borrowed view** whose unmanaged lifespan 
+     * is explicitly chained to this parent header instance to prevent use-after-free anomalies.
+     *
+     * @returns A non-owning, dependent {@link BlockHash} reference view.
+     * @throws {Error} If `btck_block_header_get_prev_hash` function bindings are missing.
      */
     get prevHash(): BlockHash {
         if (!btck_block_header_get_prev_hash) {
@@ -206,10 +216,13 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * The timestamp.
+     * The block production timestamp reported by the mining node.
      *
-     * @returns The block timestamp converted to a JavaScript Date.
-     * @throws {Error} If btck_block_header_get_timestamp is unavailable.
+     * Consensus rules enforce that this value must be strictly greater than the median 
+     * timestamp of the previous 11 blocks, and less than the network-adjusted time plus 2 hours.
+     *
+     * @returns A JavaScript `Date` instance representing the block generation point.
+     * @throws {Error} If `btck_block_header_get_timestamp` function bindings are missing.
      */
     get timestamp(): Date {
         if (!btck_block_header_get_timestamp) {
@@ -222,10 +235,13 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * The nBits difficulty target.
+     * The difficulty target value compressed into a compact `nBits` numerical sequence format.
      *
-     * @returns The difficulty target bits.
-     * @throws {Error} If btck_block_header_get_bits is unavailable.
+     * This 32-bit field encodes the threshold target value that the block hash must 
+     * fall below to meet Proof-of-Work validity requirements.
+     *
+     * @returns The 32-bit unsigned integer nBits difficulty target.
+     * @throws {Error} If `btck_block_header_get_bits` function bindings are missing.
      */
     get bits(): number {
         if (!btck_block_header_get_bits) {
@@ -236,10 +252,12 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * The version.
+     * The block version parameters bitfield configuration.
      *
-     * @returns The block version field.
-     * @throws {Error} If btck_block_header_get_version is unavailable.
+     * Signals network protocol upgrades, soft fork deployment flags, and BIP signaling states.
+     *
+     * @returns The signed 32-bit block version integer.
+     * @throws {Error} If `btck_block_header_get_version` function bindings are missing.
      */
     get version(): number {
         if (!btck_block_header_get_version) {
@@ -250,10 +268,13 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * The nonce.
+     * The Proof-of-Work nonce value.
      *
-     * @returns The nonce used in Proof-of-Work.
-     * @throws {Error} If btck_block_header_get_nonce is unavailable.
+     * An arbitrary 32-bit entropy sequence field modified during miner hashing loops 
+     * to discover a valid output header hash meeting the target constraints.
+     *
+     * @returns The 32-bit unsigned integer nonce value.
+     * @throws {Error} If `btck_block_header_get_nonce` function bindings are missing.
      */
     get nonce(): number {
         if (!btck_block_header_get_nonce) {
@@ -264,10 +285,10 @@ export class BlockHeader extends KernelOpaquePtr {
     }
 
     /**
-     * Serialize the block header to bytes.
+     * Serialize the core structural components of the header back into its raw binary format.
      *
-     * @returns The 80-byte serialized block header in consensus format.
-     * @throws {Error} If serialization fails or native function is unavailable.
+     * @returns An 80-byte Uint8Array serialized block header in standard Bitcoin consensus format.
+     * @throws {Error} If native serialization bindings are missing or code execution registers errors.
      */
     toBytes(): Uint8Array {
         if (!btck_block_header_to_bytes) {
@@ -288,16 +309,16 @@ export class BlockHeader extends KernelOpaquePtr {
     /**
      * Create a copy of this BlockHeader instance.
      *
-     * @returns A new instance pointing to a duplicated native handle.
+     * @returns A new instance pointing to a duplicated native block header allocation handle.
      */
     override copy(): this {
         return super.copy();
     }
 
     /**
-     * Return a string representation of the block header.
+     * Return a clean string representation of the block header.
      *
-     * @returns A string representing the block header.
+     * @returns A diagnostic string capturing the big-endian hexadecimal hash identifier path.
      */
     override toString(): string {
         return `BlockHeader hash=${this.blockHash.toString()}`;
