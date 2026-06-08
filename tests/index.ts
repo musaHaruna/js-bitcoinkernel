@@ -27,3 +27,6 @@ import "./test-log.js";
 
 // Run Chain tests
 import "./test-chain.js"
+
+// Run Validation tests
+import "./test-validation.js"
