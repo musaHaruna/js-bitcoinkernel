@@ -17,14 +17,16 @@ import {
     btck_chain_contains,
     btck_chain_get_by_height,
     btck_chain_get_height,
-    
+
     btck_chainstate_manager_create,
     btck_chainstate_manager_destroy,
     btck_chainstate_manager_get_active_chain,
     btck_chainstate_manager_get_best_entry,
     btck_chainstate_manager_import_blocks,
     btck_chainstate_manager_process_block,
-    btck_chainstate_manager_process_block_header
+    btck_chainstate_manager_process_block_header,
+    btck_block_destroy,
+    btck_block_read
  } from "./ffi/bindings.js";
 import { ProcessBlockException, ProcessBlockHeaderException } from "./util/exceptions.js";
 import { LazySequence } from "./util/sequence.js";
@@ -715,5 +717,110 @@ export class ChainstateManager extends KernelOpaquePtr {
      */
     override toString(): string {
         return `<ChainstateManager handle=${this.getHandle()}>`;
+    }
+}
+
+/**
+ * Abstract base class for dictionary-like lookup views into data managed by the `ChainstateManager`.
+ *
+ * This class establishes a uniform foundational infrastructure for high-level, map-like 
+ * retrieval facades. Subclasses extend this pattern to expose read-only index or disk maps 
+ * targeting specific blockchain database structures.
+ */
+export abstract class MapBase {
+    /** * The internal reference to the orchestrating chainstate manager.
+     * Exposed to derived subclasses to allow direct access to native pointer handles.
+     */
+    protected _chainman: ChainstateManager;
+
+    /**
+     * Initialize an abstract dataset view projection.
+     *
+     * @param chainman - The active consensus engine managing the targeted data pipelines.
+     */
+    constructor(chainman: ChainstateManager) {
+        this._chainman = chainman;
+    }
+}
+
+/**
+ * A dictionary-like interface optimized for reading raw, serialized block structures from disk.
+ *
+ * This map operates as a key-value store where keys are represented by index nodes ({@link BlockTreeEntry}) 
+ * and values are represented by fully parsed consensus elements ({@link Block}). 
+ * * It manages the underlying file I/O operations required to locate and inflate the block data 
+ * stored within raw `.dat` storage files.
+ */
+export class BlockMap extends MapBase {
+    /**
+     * Create a block disk storage lookup map.
+     *
+     * @param chainman - The parent verification manager governing block disk lookups.
+     */
+    constructor(chainman: ChainstateManager) {
+        super(chainman);
+    }
+
+    /**
+     * Verify whether a specific block's raw data is available and readable on disk.
+     *
+     * > ### ⚠️ Critical Memory Management Details
+     * > The underlying native function `btck_block_read` allocates and yields a fully **owned** native memory handle 
+     * > anytime a lookup hits successfully. Because this method only checks for structural *presence* and does not 
+     * > return the resulting block to the caller, this wrapper **instantly disposes** of the allocated pointer 
+     * > via `btck_block_destroy(ptr)`. This safely satisfies the unmanaged memory contract and shields the heap 
+     * > from severe native memory leaks.
+     *
+     * @param key - The block tree index entry mapping the targeted block node.
+     * @returns True if the block binary package exists on disk and is accessible; false otherwise.
+     * @throws {Error} If `btck_block_read` native FFI bindings are unavailable.
+     */
+    has(key: BlockTreeEntry): boolean {
+        if (!btck_block_read) {
+            throw new Error("btck_block_read unavailable");
+        }
+
+        const chainmanHandle = (this._chainman as any).getHandle();
+        const keyHandle = (key as any).getHandle();
+
+        const ptr = btck_block_read(chainmanHandle, keyHandle) as bigint;
+        if (ptr !== 0n) {
+            // Because btck_block_read allocates an owned handle, we must 
+            // immediately free it here to prevent a native memory leak.
+            if (btck_block_destroy) {
+                btck_block_destroy(ptr);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Fetch and read a full consensus block from disk using its metadata entry descriptor.
+     *
+     * > ### 🔄 Pointer Ownership Handover
+     * > Unlike `has(key)`, a successful lookup here transfers complete lifecycle ownership (`ownsPtr = true`) 
+     * > over to the resulting JavaScript {@link Block} instance. The unmanaged allocation remains pinned until 
+     * > the JS wrapper is manually disposed of or swept away during standard V8 garbage collection cycles.
+     *
+     * @param key - The block tree index entry identifying which structural block to extract from disk.
+     * @returns A fresh, **fully-owned** {@link Block} instance packed with the target raw binary ledger payload.
+     * @throws {Error} If native FFI bindings are missing, or if disk I/O / integrity validation drops out (returns a null pointer).
+     */
+    get(key: BlockTreeEntry): Block {
+        if (!btck_block_read) {
+            throw new Error("btck_block_read unavailable");
+        }
+
+        const chainmanHandle = (this._chainman as any).getHandle();
+        const keyHandle = (key as any).getHandle();
+
+        const ptr = btck_block_read(chainmanHandle, keyHandle) as bigint;
+        if (ptr === 0n) {
+            throw new Error(`Error reading Block for ${key.toString()} from disk`);
+        }
+
+        // Returns an owned instance wrapper (ownsPtr = true)
+        return new Block(ptr, true, null);
     }
 }
