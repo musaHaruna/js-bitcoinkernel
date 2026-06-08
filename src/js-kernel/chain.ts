@@ -350,6 +350,16 @@ export class Chain extends KernelOpaquePtr {
     }
 
     /**
+     * Access the full span of the active chain history via a sequential view model.
+     *
+     * @returns A {@link BlockTreeEntrySequence} proxy enabling lazy lookahead random-access 
+     * index queries and standard iteration over the blocks comprising the chain path.
+     */
+    get blockTreeEntries(): BlockTreeEntrySequence {
+        return new BlockTreeEntrySequence(this);
+    }
+
+    /**
      * The total number of blocks currently recorded within the active chain path.
      *
      * This count includes all verified ledger checkpoints, mapping exactly to `height + 1` 
@@ -368,5 +378,121 @@ export class Chain extends KernelOpaquePtr {
      */
     override toString(): string {
         return `<Chain height=${this.height}>`;
+    }
+}
+
+/**
+ * A live, lazily-evaluated sequence view of block tree entries comprising an active blockchain path.
+ *
+ * This sequence exposes a continuous array-like interface where the positional index corresponds 
+ * exactly to the blockchain height (with index `0` mapping to the Genesis block). Because it is a 
+ * dynamic view over the active chain state, its total length and constituent elements will automatically 
+ * track live mutations, expanding as the network receives new blocks or shifting completely during 
+ * blockchain reorganizations (re-orgs).
+ *
+ * > ### ⚠️ Critical Concurrency Warning
+ * > The underlying chain architecture **must not** be mutated while actively iterating across this sequence. 
+ * > If a re-org event clears or modifies the active chain path midway through an iteration cycle, 
+ * > there is no transactional isolation; subsequent indices may yield elements from an entirely 
+ * > different fork branch, leading to inconsistent ledger states.
+ */
+export class BlockTreeEntrySequence extends LazySequence<BlockTreeEntry> {
+    /** The active chain instance providing the underlying structural state. */
+    private _chain: Chain;
+
+    /**
+     * Create a dynamic sequence view over a specific blockchain path.
+     *
+     * @param chain - The target chain context to observe.
+     */
+    constructor(chain: Chain) {
+        super();
+        this._chain = chain;
+    }
+
+    /**
+     * The total number of blocks currently recorded in the active chain path.
+     *
+     * Reflects the current tip height plus one (to account for the genesis block).
+     *
+     * @returns The dynamic size integer of the chain.
+     */
+    get length(): number {
+        return this._chain.length;
+    }
+
+    /**
+     * Retrieve the block tree entry situated at a specific historical chain height.
+     * * This method fulfills the internal abstraction contract of the base `LazySequence`.
+     *
+     * * @note This returns a **borrowed view** (`ownsPtr = false`) whose underlying memory context 
+     * is pinned directly to the lifetime of the parent `Chain` instance.
+     *
+     * @param index - The targeted blockchain height integer to query.
+     * @returns A {@link BlockTreeEntry} view mapping the block index node at the specified height.
+     * @throws {Error} If native FFI bindings are missing or pointer extraction fails.
+     */
+    protected override getItem(index: number): BlockTreeEntry {
+        if (!btck_chain_get_by_height) {
+            throw new Error("btck_chain_get_by_height unavailable");
+        }
+
+        // Peer-access bypass to extract the protected Chain pointer handle
+        const ptr = btck_chain_get_by_height((this._chain as any).getHandle(), index) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error(`Failed to get BlockTreeEntry pointer at height ${index}`);
+        }
+
+        // Instantiated as a dependent view layout: ownsPtr = false, parent = this._chain
+        return new BlockTreeEntry(ptr, false, this._chain);
+    }
+
+    /**
+     * Evaluate whether a specific block entry is currently part of the active consensus chain.
+     *
+     * This allows you to verify if a known block is part of the main canonical ledger 
+     * or if it has been relegated to an inactive/stale fork branch.
+     *
+     * @param other - The candidate object targeted for membership testing.
+     * @returns True if the element is a `BlockTreeEntry` and currently resides within this active chain timeline.
+     * @throws {Error} If `btck_chain_contains` function bindings are missing.
+     */
+    contains(other: unknown): boolean {
+        if (!(other instanceof BlockTreeEntry)) {
+            return false;
+        }
+
+        if (!btck_chain_contains) {
+            throw new Error("btck_chain_contains unavailable");
+        }
+
+        // Peer-access bypass rules applied to both objects
+        const chainHandle = (this._chain as any).getHandle();
+        const entryHandle = (other as any).getHandle();
+
+        const result = btck_chain_contains(chainHandle, entryHandle);
+
+        return Boolean(result);
+    }
+
+    /**
+     * Native JavaScript Iterator implementation.
+     *
+     * Facilitates clean, idiomatic parsing of the block chain history utilizing standard 
+     * ECMAScript loop constructs.
+     * * @example
+     * ```typescript
+     * for (const entry of chainSequence) {
+     * console.log(`Processing block at height: ${entry.height}`);
+     * }
+     * ```
+     * * @yields A non-owning {@link BlockTreeEntry} view for each sequential height.
+     */
+    *[Symbol.iterator](): Iterator<BlockTreeEntry> {
+        const len = this.length;
+        for (let i = 0; i < len; i++) {
+            yield this.getItem(i);
+        }
     }
 }
