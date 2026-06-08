@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A JavaScript/TypeScript Bitcoin kernel that wraps native C/C++ functions to provide safe and structured access to Bitcoin data structures like block headers and hashes.",
   "main": "dist/js-kernel/index.js",
-  "types": "dist/index.d.ts",
+  "types": "dist/js-kernel/index.d.ts",
   "files": [
     "dist"
   ],
@@ -11,7 +11,10 @@
     "build": "tsc && tsc-alias && cpy \"src/js-kernel/binaries/**/*\" dist/js-kernel/binaries",
     "dev": "tsx ./src/js-kernel/index.ts",
     "test": "tsx ./tests/index.ts",
-    "start": "node dist/js-kernel/index.js"
+    "start": "node dist/js-kernel/index.js",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +28,7 @@
     "cpy-cli": "^7.0.0",
     "tsc-alias": "^1.8.17",
     "tsx": "^4.22.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitepress": "^1.6.4"
   }
 }
