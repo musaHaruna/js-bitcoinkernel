@@ -20,7 +20,13 @@ import {
     btck_block_validation_state_destroy,
     btck_block_validation_state_copy,
     btck_block_validation_state_get_validation_mode,
-    btck_block_validation_state_get_block_validation_result
+    btck_block_validation_state_get_block_validation_result,
+    btck_block_tree_entry_get_block_hash,
+    btck_block_tree_entry_get_previous,
+    btck_block_tree_entry_get_height,
+    btck_block_tree_entry_equals,
+    btck_block_tree_entry_get_ancestor,
+    btck_block_tree_entry_get_block_header,
 } from "./ffi/bindings.js";
 
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
@@ -472,5 +478,185 @@ export class BlockValidationState extends KernelOpaquePtr {
      */
     override copy(): this {
         return super.copy();
+    }
+}
+
+/**
+ * An entry within the internal in-memory block tree graph index.
+ *
+ * This class wraps an opaque pointer to a block index node (equivalent to `CBlockIndex` 
+ * in Bitcoin Core). It represents a structural block validation checkpoint known to the 
+ * chainstate manager. Because it tracks all validated headers received over the network, 
+ * this structure forms a tree tracking competing alternative fork branches alongside 
+ * the main active consensus chain (the tip).
+ */
+export class BlockTreeEntry extends KernelOpaquePtr {
+    /**
+     * Wrap an existing native block tree entry pointer.
+     *
+     * @param ptr - The native memory handle.
+     * @param ownsPtr - Whether this instance governs the lifetime of the unmanaged pointer. Defaults to false.
+     * @param parent - The parent memory context (typically the global chainstate tracking layer). Defaults to null.
+     */
+    constructor(
+        ptr: bigint,
+        ownsPtr = false,
+        parent: KernelOpaquePtr | null = null,
+    ) {
+        super(ptr, ownsPtr, parent);
+    }
+
+    /**
+     * The unique cryptographic block hash identifier represented by this entry.
+     *
+     * * @note This returns a **borrowed view** tied directly to the lifetime of this entry instance. 
+     * To prevent memory errors, do not manually delete or store this view beyond the entry's scope.
+     *
+     * @returns A {@link BlockHash} reference view.
+     * @throws {Error} If `btck_block_tree_entry_get_block_hash` function bindings are missing.
+     */
+    get blockHash(): BlockHash {
+        if (!btck_block_tree_entry_get_block_hash) {
+            throw new Error("btck_block_tree_entry_get_block_hash unavailable");
+        }
+
+        const ptr = btck_block_tree_entry_get_block_hash(
+            this.getHandle(),
+        ) as bigint;
+
+        return BlockHash.fromView(ptr, this);
+    }
+
+    /**
+     * The height of this block in the blockchain ledger topology.
+     *
+     * Represents the absolute distance from the genesis block, where the genesis 
+     * block is strictly defined at height `0`.
+     *
+     * @returns The non-negative block height integer index.
+     * @throws {Error} If `btck_block_tree_entry_get_height` function bindings are missing.
+     */
+    get height(): number {
+        if (!btck_block_tree_entry_get_height) {
+            throw new Error("btck_block_tree_entry_get_height unavailable");
+        }
+
+        return btck_block_tree_entry_get_height(
+            this.getHandle(),
+        ) as number;
+    }
+
+    /**
+     * The immediate parent block tree entry.
+     *
+     * Resolves the ancestral block indexing handle located immediately prior to this block.
+     * Returns `null` or an invalid pointer state if evaluated at the genesis block boundary.
+     *
+     * * @note This returns a **borrowed view** tied to the same parent chainstate context 
+     * governing this entry, maintaining safety across parent tree re-org mutations.
+     *
+     * @returns A {@link BlockTreeEntry} view mapping the parent block node.
+     * @throws {Error} If `btck_block_tree_entry_get_previous` function bindings are missing.
+     */
+    get previous(): BlockTreeEntry {
+        if (!btck_block_tree_entry_get_previous) {
+            throw new Error("btck_block_tree_entry_get_previous unavailable");
+        }
+
+        const ptr = btck_block_tree_entry_get_previous(
+            this.getHandle(),
+        ) as bigint;
+
+        return BlockTreeEntry.fromView(ptr, this.parent);
+    }
+
+    /**
+     * The full 80-byte consensus block header structure represented by this entry.
+     *
+     * * @note Unlike the hash or previous entry fields, this method constructs a 
+     * **fully independent, owned object** instance copy. Its unmanaged native memory structure 
+     * lifecycle is governed explicitly by the resulting JavaScript wrapper.
+     *
+     * @returns A fresh, fully-owned {@link BlockHeader} instance.
+     * @throws {Error} If `btck_block_tree_entry_get_block_header` function bindings are missing.
+     */
+    get blockHeader(): BlockHeader {
+        if (!btck_block_tree_entry_get_block_header) {
+            throw new Error("btck_block_tree_entry_get_block_header unavailable");
+        }
+
+        const ptr = btck_block_tree_entry_get_block_header(
+            this.getHandle(),
+        ) as bigint;
+
+        return BlockHeader.fromHandle(ptr);
+    }
+
+    /**
+     * Retrieve an ancestral block entry located at a specific historical chain height.
+     *
+     * Traverses backwards through the historical blockchain path to isolate the ancestor block. 
+     * * @note Optimization: The underlying native layer utilizes an internal skip-list index 
+     * structure (jump tables). This drops traversal search overhead from linear time down to an 
+     * efficient logarithmic scale, or `$O(\log N)$`.
+     *
+     * @param height - The target historical block height integer to query.
+     * @returns A borrowed {@link BlockTreeEntry} view mapping the ancestor block at the requested height.
+     * @throws {RangeError} If the target height falls outside the acceptable range `[0, this.height]`.
+     * @throws {Error} If `btck_block_tree_entry_get_ancestor` function bindings are missing.
+     */
+    getAncestor(height: number): BlockTreeEntry {
+        if (height < 0 || height > this.height) {
+            throw new RangeError(
+                `height ${height} out of range for entry at height ${this.height}`,
+            );
+        }
+
+        if (!btck_block_tree_entry_get_ancestor) {
+            throw new Error("btck_block_tree_entry_get_ancestor unavailable");
+        }
+
+        const ptr = btck_block_tree_entry_get_ancestor(
+            this.getHandle(),
+            height,
+        ) as bigint;
+
+        return BlockTreeEntry.fromView(ptr, this.parent);
+    }
+
+    /**
+     * Check value equality against another candidate block tree entry.
+     *
+     * Compares the underlying unmanaged native memory structure handle addresses to 
+     * verify structural identity inside the index graph.
+     *
+     * @param other - The candidate object targeted for comparison.
+     * @returns True if both are BlockTreeEntry instances pointing to the same underlying native struct.
+     * @throws {Error} If `btck_block_tree_entry_equals` function bindings are missing.
+     */
+    equals(other: unknown): boolean {
+        if (!(other instanceof BlockTreeEntry)) {
+            return false;
+        }
+
+        if (!btck_block_tree_entry_equals) {
+            throw new Error("btck_block_tree_entry_equals unavailable");
+        }
+
+        return Boolean(
+            btck_block_tree_entry_equals(
+                this.getHandle(),
+                other.getHandle(),
+            ),
+        );
+    }
+
+    /**
+     * Return a clean string representation of the block tree entry properties.
+     *
+     * @returns A diagnostic string capturing the block height and big-endian hexadecimal hash path.
+     */
+    override toString(): string {
+        return `<BlockTreeEntry height=${this.height} hash=${this.blockHash}>`;
     }
 }
