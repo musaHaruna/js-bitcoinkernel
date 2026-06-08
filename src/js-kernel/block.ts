@@ -1,3 +1,4 @@
+import { ConsensusParams } from "./chain.js";
 import {
     btck_block_hash_create,
     btck_block_hash_destroy,
@@ -27,9 +28,20 @@ import {
     btck_block_tree_entry_equals,
     btck_block_tree_entry_get_ancestor,
     btck_block_tree_entry_get_block_header,
+    btck_block_count_transactions,
+    btck_block_get_transaction_at,
+    btck_block_check,
+    btck_block_copy,
+    btck_block_create,
+    btck_block_destroy,
+    btck_block_get_hash,
+    btck_block_get_header,
+    btck_block_to_bytes,
 } from "./ffi/bindings.js";
-
+import koffi from "koffi"
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
+import { Transaction } from "./transaction.js";
+import { LazySequence } from "./util/sequence.js";
 
 /**
  * Unmanaged wrapper for a Bitcoin Block Hash identifier.
@@ -658,5 +670,241 @@ export class BlockTreeEntry extends KernelOpaquePtr {
      */
     override toString(): string {
         return `<BlockTreeEntry height=${this.height} hash=${this.blockHash}>`;
+    }
+}
+
+/**
+ * Bitflags controlling optional context-free validation checks performed on a block structure.
+ *
+ * "Context-free" checks are structural verifications that can be evaluated on an isolated block 
+ * immediately upon receipt over the network, completely independent of the current active chain state, 
+ * block height, or UTXO database availability.
+ * * Multiple flags can be packed together using bitwise OR operations (e.g., `BlockCheckFlags.POW | BlockCheckFlags.MERKLE`).
+ */
+export enum BlockCheckFlags {
+    /** * Execute only minimal baseline structural verification rules.
+     * * Ensures the raw block size complies with maximum limits and that the transaction vector is non-empty.
+     */
+    BASE = 0,
+    
+    /** * Execute Proof-of-Work hash threshold verification.
+     * * Validates that the computed block header double-SHA256 hash actually satisfies the difficulty target encoded 
+     * inside the header's `nBits` field.
+     */
+    POW = 1 << 0,
+    
+    /** * Reconstruct and verify the Merkle Root architecture.
+     * * Re-hashes the complete list of transactions inside the block to guarantee parity with the `hashMerkleRoot` field 
+     * committed in the header. Crucially, this pass screens for malicious Merkle tree transaction list mutation attacks.
+     */
+    MERKLE = 1 << 1,
+    
+    /** Enable all optional structural, cryptographic, and mathematical context-free block checks. */
+    ALL = (1 << 0) | (1 << 1),
+}
+
+/**
+ * Unmanaged wrapper for a deserialized Bitcoin Block.
+ *
+ * This class acts as the primary data container representing a full Bitcoin block 
+ * (comprising the 80-byte block header and the full vector of transactions, including 
+ * the initial coinbase transaction). It interfaces directly with the native kernel layer 
+ * to handle network-wire deserialization, state serialization, random-access transaction 
+ * slicing, and contextual validation sweeps.
+ */
+export class Block extends KernelOpaquePtr {
+    protected static override createFn = btck_block_create as (...args: unknown[]) => bigint;
+    protected static override destroyFn = btck_block_destroy as (ptr: bigint) => void;
+    protected static override copyFn = btck_block_copy as (ptr: bigint) => bigint;
+
+    /**
+     * Create a block wrapper instance from a native pointer.
+     *
+     * @param ptr - The native memory handle.
+     * @param ownsPtr - Whether this instance governs the lifecycle of the unmanaged pointer. Defaults to true.
+     * @param parent - The parent memory boundary holding this reference, if it is a borrowed view. Defaults to null.
+     */
+    constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+        super(ptr, ownsPtr, parent);
+    }
+
+    /**
+     * Parse a complete native block structure out of serialized P2P consensus-format bytes.
+     *
+     * Decodes the raw binary payload containing the block header, transaction counter, 
+     * and full transaction stream into an allocated native memory block.
+     *
+     * @param rawBlock - The raw binary buffer representing the serialized consensus block.
+     * @returns A fresh, fully-owned Block instance.
+     * @throws {Error} If FFI bindings are unavailable or if native parsing fails (returning a null pointer).
+     */
+    static fromBytes(rawBlock: Uint8Array): Block {
+        if (!btck_block_create) {
+            throw new Error("btck_block_create unavailable");
+        }
+
+        const ptr = btck_block_create(rawBlock, BigInt(rawBlock.length)) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error("Failed to create Block from raw bytes");
+        }
+
+        return new Block(ptr, true);
+    }
+
+    /**
+     * Compute and retrieve the unique cryptographic block hash identifier.
+     *
+     * Executes a native double-SHA256 (`SHA256(SHA256(...))`) calculation directly over 
+     * the block's internal 80-byte header component.
+     *
+     * * @note This method yields a **standalone, fully-owned copy** of the block hash 
+     * generated at the native boundary. It maintains an independent lifecycle separate from this block.
+     *
+     * @returns An independent, owned {@link BlockHash} instance.
+     * @throws {Error} If `btck_block_get_hash` function bindings are missing or pointer extraction fails.
+     */
+    get blockHash(): BlockHash {
+        if (!btck_block_get_hash) {
+            throw new Error("btck_block_get_hash unavailable");
+        }
+
+        const ptr = btck_block_get_hash(this.getHandle()) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error("Failed to get block hash");
+        }
+
+        return new BlockHash(ptr, true);
+    }
+
+    /**
+     * Isolate and extract the standalone block header structure.
+     *
+     * * @note This method returns a **fully-owned copy** of the 80-byte header sub-component. 
+     * Modifications or destruction of the returned {@link BlockHeader} will not destabilize 
+     * the underlying parent block context.
+     *
+     * @returns An independent, owned {@link BlockHeader} instance.
+     * @throws {Error} If `btck_block_get_header` function bindings are missing or pointer extraction fails.
+     */
+    get blockHeader(): BlockHeader {
+        if (!btck_block_get_header) {
+            throw new Error("btck_block_get_header unavailable");
+        }
+
+        const ptr = btck_block_get_header(this.getHandle()) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error("Failed to get block header");
+        }
+
+        return new BlockHeader(ptr, true);
+    }
+
+    /**
+     * Serialize the complete internal block layout back into its raw binary network representation.
+     *
+     * Orchestrates an unmanaged-to-managed stream pipeline. The native engine passes dynamic memory 
+     * chunks to a runtime callback proxy (`WriteBytesCb`), which decodes unmanaged uint8 sequences 
+     * into intermediate buffers before re-assembling them into a unified consensus byte array. 
+     * The resulting array is fully compatible with P2P network transmissions and long-term disk persistence.
+     *
+     * @returns A unified consensus-format `Uint8Array`.
+     * @throws {Error} If serialization bindings are unavailable or if the internal chunk callback fails.
+     */
+    toBytes(): Uint8Array {
+        if (!btck_block_to_bytes) {
+            throw new Error("btck_block_to_bytes unavailable");
+        }
+
+        const chunks: Uint8Array[] = [];
+
+        // Dynamic standard callback matching the WriteBytesCb prototype declaration
+        const callback = (bytesPtr: any, size: bigint, _userData: any) => {
+            const buf = koffi.decode(bytesPtr, "uint8", Number(size));
+            chunks.push(new Uint8Array(buf));
+            return 1; // Return 1 to indicate successful write chunk processing
+        };
+
+        const ret = btck_block_to_bytes(this.getHandle(), callback, null) as number;
+        if (ret !== 1) {
+            throw new Error(`Failed to serialize block to bytes (code: ${ret})`);
+        }
+
+        // Assemble chunks into a unified array buffer view
+        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            result.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        return result;
+    }
+
+    /**
+     * Run context-free structural and mathematical validation passes against this block.
+     *
+     * Executes the baseline consensus ruleset checks that do not require access to historical block indices 
+     * or active UTXO state pools. This includes validating maximum size parameters, coinbase structural placement rules, 
+     * per-transaction structural limits, and sigop (signature operation) saturation points. 
+     * Cryptographic proof-of-work thresholds and Merkle tree root symmetry can be toggled via parameter configurations.
+     *
+     * @param consensusParams - Active consensus parameter guidelines targeting the running network chain.
+     * @param flags - Optional bitfield configurations toggling proof-of-work or Merkle evaluations. Defaults to `BlockCheckFlags.ALL`.
+     * @returns A fresh, fully-owned {@link BlockValidationState} capture encapsulating error codes and pass/fail metrics.
+     * @throws {Error} If native execution bindings are missing or if state verification codes mismatch invariants.
+     */
+    check(
+        consensusParams: ConsensusParams,
+        flags: BlockCheckFlags = BlockCheckFlags.ALL
+    ): BlockValidationState {
+        if (!btck_block_check) {
+            throw new Error("btck_block_check unavailable");
+        }
+
+        const state = new BlockValidationState(); // Spawns a fresh context internally
+
+        // Cast to 'any' to bypass cross-subclass protected access restrictions in TypeScript
+        const ret = btck_block_check(this.getHandle(), (consensusParams as any).getHandle(), flags, (state as any).getHandle()) as number;
+
+        const isValid = state.validationMode === ValidationMode.VALID;
+        if ((ret === 1) !== isValid) {
+            throw new Error("Assertion failed: Block validation status code mismatch with ValidationMode");
+        }
+
+        return state;
+    }
+
+    /**
+     * Direct protected array accessor to pull a specific transaction address index from the native layer.
+     *
+     * @param transactionIndex - Zero-based position index tracking the transaction target.
+     * @returns A non-owning {@link Transaction} instance mapped directly to the parent block's memory boundaries.
+     * @throws {Error} If native lookup bindings are missing or if pointer parsing resolves to null.
+     */
+    protected _getTransactionAt(transactionIndex: number): Transaction {
+        if (!btck_block_get_transaction_at) {
+            throw new Error("btck_block_get_transaction_at unavailable");
+        }
+
+        const ptr = btck_block_get_transaction_at(this.getHandle(), BigInt(transactionIndex)) as bigint;
+
+        if (ptr === 0n) {
+            throw new Error(`Failed to get transaction at index ${transactionIndex}`);
+        }
+
+        return new Transaction(ptr, false, this);
+    }
+
+    /**
+     * Create a copy of this Block instance.
+     *
+     * @returns A new instance pointing to a duplicated native block handle allocation.
+     */
+    override copy(): this {
+        return super.copy();
     }
 }
