@@ -32,6 +32,7 @@ ExternalProject_Add(bitcoin_core
         -DBUILD_DAEMON=OFF
         -DBUILD_CLI=OFF
         -DENABLE_WALLET=OFF
+        -DENABLE_IPC=OFF
         -DCMAKE_BUILD_TYPE=Release
 
     BUILD_COMMAND
