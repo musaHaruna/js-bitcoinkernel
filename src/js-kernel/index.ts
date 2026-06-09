@@ -1,4 +1,4 @@
- /**
+/**
  * js-bitcoinkernel
  *
  * Public entry point for the Bitcoin kernel library.
@@ -10,72 +10,72 @@
  * Only export high-level primitives here.
  */
 export {
-    Block,
-    BlockCheckFlags,
-    BlockHash,
-    BlockHeader,
-    BlockTreeEntry,
-    BlockSpentOutputs,
-    BlockValidationResult,
-    BlockValidationState,
-    TransactionSequence,
-    TransactionSpentOutputsSequence,
-    ValidationMode,
+  Block,
+  BlockCheckFlags,
+  BlockHash,
+  BlockHeader,
+  BlockTreeEntry,
+  BlockSpentOutputs,
+  BlockValidationResult,
+  BlockValidationState,
+  TransactionSequence,
+  TransactionSpentOutputsSequence,
+  ValidationMode,
 } from "./block.js";
 
 export {
-    BlockMap,
-    BlockSpentOutputsMap,
-    BlockTreeEntryMap,
-    BlockTreeEntrySequence,
-    Chain,
-    ChainParameters,
-    ChainstateManager,
-    ChainstateManagerOptions,
-    ChainType,
-    ConsensusParams,
+  BlockMap,
+  BlockSpentOutputsMap,
+  BlockTreeEntryMap,
+  BlockTreeEntrySequence,
+  Chain,
+  ChainParameters,
+  ChainstateManager,
+  ChainstateManagerOptions,
+  ChainType,
+  ConsensusParams,
 } from "./chain.js";
 
 export { Context, ContextOptions } from "./context.js";
 
 export {
-    KernelLogViewer,
-    LogCategory,
-    LogLevel,
-    LoggingConnection,
-    LoggingOptions,
-    enable_log_category,
-    disable_log_category,
-    logging_set_options,
-    set_log_level_category, 
+  KernelLogViewer,
+  LogCategory,
+  LogLevel,
+  LoggingConnection,
+  LoggingOptions,
+  enable_log_category,
+  disable_log_category,
+  logging_set_options,
+  set_log_level_category,
 
 } from "./log.js";
 
 export {
-    PrecomputedTransactionData,
-    ScriptPubkey,
-    ScriptVerificationFlags,
-    ScriptVerifyException,
-    ScriptVerifyStatus,
+  PrecomputedTransactionData,
+  ScriptPubkey,
+  ScriptVerificationFlags,
+  ScriptVerifyException,
+  ScriptVerifyStatus,
 } from "./script.js";
 
 export {
-    Coin,
-    CoinSequence,
-    Transaction,
-    TransactionInput,
-    TransactionInputSequence,
-    TransactionOutput,
-    TransactionOutputSequence,
-    TransactionOutPoint,
-    TransactionSpentOutputs,
-    Txid,
+  Coin,
+  CoinSequence,
+  Transaction,
+  TransactionInput,
+  TransactionInputSequence,
+  TransactionOutput,
+  TransactionOutputSequence,
+  TransactionOutPoint,
+  TransactionSpentOutputs,
+  Txid,
 } from "./transaction.js";
 
 export {
-    KernelException,
-    ProcessBlockException,
-    ProcessBlockHeaderException,
+  KernelException,
+  ProcessBlockException,
+  ProcessBlockHeaderException,
 } from "./util/exceptions.js";
 
 export { ValidationInterfaceCallbacks } from "./validation.js";

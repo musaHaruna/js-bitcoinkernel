@@ -3,14 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { 
-    BlockHash, 
-    BlockHeader, 
-    Block, 
-    BlockTreeEntry, 
-    ValidationMode, 
-    BlockCheckFlags, 
-    BlockValidationResult, 
+import {
+  BlockHash,
+  BlockHeader,
+  Block,
+  BlockTreeEntry,
+  ValidationMode,
+  BlockCheckFlags,
+  BlockValidationResult,
 } from "../src/js-kernel/block.js";
 import { ChainParameters, ChainstateManager, ChainType, ChainstateManagerOptions } from "../src/js-kernel/chain.js";
 import { TransactionSpentOutputs } from "../src/js-kernel/transaction.js";
@@ -31,232 +31,232 @@ const GENESIS_BLOCK_HEX = "01000000000000000000000000000000000000000000000000000
  * BlockTreeEntry Test Suite
  */
 function testBlockTreeEntry(chainmanRegtest: ChainstateManager): void {
-    console.log("=== Testing BlockTreeEntry ===");
+  console.log("=== Testing BlockTreeEntry ===");
 
-    const chain = chainmanRegtest.getActiveChain();
+  const chain = chainmanRegtest.getActiveChain();
 
-    const block0 = chain.blockTreeEntries.get(0);
-    assert.equal(block0.height, 0);
+  const block0 = chain.blockTreeEntries.get(0);
+  assert.equal(block0.height, 0);
 
-    const block1 = chain.blockTreeEntries.get(1);
-    assert.equal(block1.height, 1);
-    
-    assert.equal(block0.equals(block1), false, "block0 should not equal block1");
-    assert.ok(block0 instanceof BlockTreeEntry);
-    assert.deepEqual(block1.previous, block0);
-    assert.equal(block1.blockHeader.blockHash.toString(), block1.blockHash.toString());
+  const block1 = chain.blockTreeEntries.get(1);
+  assert.equal(block1.height, 1);
 
-    assert.equal(block0.equals(null as any), false);
+  assert.equal(block0.equals(block1), false, "block0 should not equal block1");
+  assert.ok(block0 instanceof BlockTreeEntry);
+  assert.deepEqual(block1.previous, block0);
+  assert.equal(block1.blockHeader.blockHash.toString(), block1.blockHash.toString());
 
-    const genesisHashHex = block0.blockHash.toString();
-    assert.equal(block0.toString(), `<BlockTreeEntry height=0 hash=${genesisHashHex}>`);
+  assert.equal(block0.equals(null as any), false);
 
-    console.log("✓ BlockTreeEntry tests passed");
-    console.log();
+  const genesisHashHex = block0.blockHash.toString();
+  assert.equal(block0.toString(), `<BlockTreeEntry height=0 hash=${genesisHashHex}>`);
+
+  console.log("✓ BlockTreeEntry tests passed");
+  console.log();
 }
 
 /**
  * BlockTreeEntry Ancestor Resolution Test Suite
  */
 function testBlockTreeEntryGetAncestor(chainmanRegtest: ChainstateManager): void {
-    console.log("=== Testing BlockTreeEntry GetAncestor ===");
+  console.log("=== Testing BlockTreeEntry GetAncestor ===");
 
-    const chain = chainmanRegtest.getActiveChain();
-    const tip = chain.blockTreeEntries.get(chain.height);
+  const chain = chainmanRegtest.getActiveChain();
+  const tip = chain.blockTreeEntries.get(chain.height);
 
-    assert.ok(tip.getAncestor(0).equals(chain.blockTreeEntries.get(0)), "Ancestor 0 should match block 0");
-    assert.ok(tip.getAncestor(tip.height).equals(tip), "Ancestor at tip height should be tip");
-    assert.ok(tip.getAncestor(tip.height - 1).equals(chain.blockTreeEntries.get(tip.height - 1)), "Ancestor at tip-1 height should match");
+  assert.ok(tip.getAncestor(0).equals(chain.blockTreeEntries.get(0)), "Ancestor 0 should match block 0");
+  assert.ok(tip.getAncestor(tip.height).equals(tip), "Ancestor at tip height should be tip");
+  assert.ok(tip.getAncestor(tip.height - 1).equals(chain.blockTreeEntries.get(tip.height - 1)), "Ancestor at tip-1 height should match");
 
-    assert.throws(() => tip.getAncestor(tip.height + 1), /out of range/);
-    assert.throws(() => tip.getAncestor(-1), /out of range/);
+  assert.throws(() => tip.getAncestor(tip.height + 1), /out of range/);
+  assert.throws(() => tip.getAncestor(-1), /out of range/);
 
-    console.log("✓ BlockTreeEntry GetAncestor tests passed");
-    console.log();
+  console.log("✓ BlockTreeEntry GetAncestor tests passed");
+  console.log();
 }
 
 /**
  * Fork-Aware Ancestor Resolution Test Suite
  */
 function testBlockTreeEntryGetAncestorFork(chainmanRegtest: ChainstateManager): void {
-    console.log("=== Testing BlockTreeEntry GetAncestor Fork ===");
+  console.log("=== Testing BlockTreeEntry GetAncestor Fork ===");
 
-    const chain = chainmanRegtest.getActiveChain();
-    const forkBlock = Block.fromBytes(Uint8Array.from(Buffer.from(FORK_BLOCK_HEX, "hex")));
-    chainmanRegtest.processBlock(forkBlock);
+  const chain = chainmanRegtest.getActiveChain();
+  const forkBlock = Block.fromBytes(Uint8Array.from(Buffer.from(FORK_BLOCK_HEX, "hex")));
+  chainmanRegtest.processBlock(forkBlock);
 
-    const forkEntry = chainmanRegtest.blockTreeEntries.get(forkBlock.blockHash);
-    assert.equal(forkEntry.height, 1);
-    assert.equal(forkEntry.equals(chain.blockTreeEntries.get(1)), false);
-    
-    assert.ok(forkEntry.getAncestor(0).equals(chain.blockTreeEntries.get(0)), "Fork entry ancestor 0 should resolve to genesis");
-    assert.ok(forkEntry.getAncestor(1).equals(forkEntry), "Fork entry ancestor at height 1 should be itself");
+  const forkEntry = chainmanRegtest.blockTreeEntries.get(forkBlock.blockHash);
+  assert.equal(forkEntry.height, 1);
+  assert.equal(forkEntry.equals(chain.blockTreeEntries.get(1)), false);
 
-    console.log("✓ BlockTreeEntry GetAncestor Fork tests passed");
-    console.log();
+  assert.ok(forkEntry.getAncestor(0).equals(chain.blockTreeEntries.get(0)), "Fork entry ancestor 0 should resolve to genesis");
+  assert.ok(forkEntry.getAncestor(1).equals(forkEntry), "Fork entry ancestor at height 1 should be itself");
+
+  console.log("✓ BlockTreeEntry GetAncestor Fork tests passed");
+  console.log();
 }
 
 /**
  * BlockHash Test Suite
  */
 function testBlockHash(): void {
-    console.log("=== Testing BlockHash ===");
+  console.log("=== Testing BlockHash ===");
 
-    // FIXED: Switched from Buffer back to clean Uint8Array to satisfy deepStrictEqual strict mode
-    const zeroBytes = new Uint8Array(32).fill("0".charCodeAt(0));
-    const oneBytes = new Uint8Array(32).fill("1".charCodeAt(0));
+  // FIXED: Switched from Buffer back to clean Uint8Array to satisfy deepStrictEqual strict mode
+  const zeroBytes = new Uint8Array(32).fill("0".charCodeAt(0));
+  const oneBytes = new Uint8Array(32).fill("1".charCodeAt(0));
 
-    const hashZero = BlockHash.fromBytes(zeroBytes);
+  const hashZero = BlockHash.fromBytes(zeroBytes);
 
-    assert.equal(hashZero.equals(hashZero), true);
-    assert.equal(hashZero.equals(BlockHash.fromBytes(zeroBytes)), true);
-    assert.equal(hashZero.equals(BlockHash.fromBytes(oneBytes)), false);
+  assert.equal(hashZero.equals(hashZero), true);
+  assert.equal(hashZero.equals(BlockHash.fromBytes(zeroBytes)), true);
+  assert.equal(hashZero.equals(BlockHash.fromBytes(oneBytes)), false);
 
-    assert.deepEqual(hashZero.toBytes(), zeroBytes);
-    assert.equal(hashZero.toString(), "3030303030303030303030303030303030303030303030303030303030303030");
+  assert.deepEqual(hashZero.toBytes(), zeroBytes);
+  assert.equal(hashZero.toString(), "3030303030303030303030303030303030303030303030303030303030303030");
 
-    assert.equal(hashZero.equals(zeroBytes as any), false);
+  assert.equal(hashZero.equals(zeroBytes as any), false);
 
-    assert.throws(() => BlockHash.fromBytes(new Uint8Array(31)), /requires 32 bytes/);
+  assert.throws(() => BlockHash.fromBytes(new Uint8Array(31)), /requires 32 bytes/);
 
-    const hashRecreated = BlockHash.fromBytes(hashZero.toBytes());
-    assert.equal(hashZero.equals(hashRecreated), true);
+  const hashRecreated = BlockHash.fromBytes(hashZero.toBytes());
+  assert.equal(hashZero.equals(hashRecreated), true);
 
-    hashZero.dispose();
+  hashZero.dispose();
 
-    console.log("✓ BlockHash tests passed");
-    console.log();
+  console.log("✓ BlockHash tests passed");
+  console.log();
 }
 
 /**
  * BlockHeader Test Suite
  */
 function testBlockHeader(): void {
-    console.log("=== Testing BlockHeader ===");
+  console.log("=== Testing BlockHeader ===");
 
-    const headerHex = "00c06a24d2ff376fa4cab6d28ac75ea4a38a675ac1cafa668cb601000000000000000000755926c6aa5c931b0b054c370746824f8935b35bd27172f1a36c07749b5cd60b9aa77869a1fc01171794522b";
-    // FIXED: Ensured execution bytes are cross-compatible pure Uint8Arrays
-    const headerBytes = Uint8Array.from(Buffer.from(headerHex, "hex"));
-    const header = BlockHeader.fromBytes(headerBytes);
+  const headerHex = "00c06a24d2ff376fa4cab6d28ac75ea4a38a675ac1cafa668cb601000000000000000000755926c6aa5c931b0b054c370746824f8935b35bd27172f1a36c07749b5cd60b9aa77869a1fc01171794522b";
+  // FIXED: Ensured execution bytes are cross-compatible pure Uint8Arrays
+  const headerBytes = Uint8Array.from(Buffer.from(headerHex, "hex"));
+  const header = BlockHeader.fromBytes(headerBytes);
 
-    assert.equal(header.blockHash.toString(), "00000000000000000000b1a3614f5b43589011f52dcf2c67c9e66554823ed233");
-    assert.equal(header.prevHash.toString(), "00000000000000000001b68c66facac15a678aa3a45ec78ad2b6caa46f37ffd2");
-    assert.equal(Math.floor(header.timestamp.getTime() / 1000), 1769514906);
-    assert.equal(header.bits, 386006177);
-    assert.equal(header.version, 610975744);
-    assert.equal(header.nonce, 726832151);
+  assert.equal(header.blockHash.toString(), "00000000000000000000b1a3614f5b43589011f52dcf2c67c9e66554823ed233");
+  assert.equal(header.prevHash.toString(), "00000000000000000001b68c66facac15a678aa3a45ec78ad2b6caa46f37ffd2");
+  assert.equal(Math.floor(header.timestamp.getTime() / 1000), 1769514906);
+  assert.equal(header.bits, 386006177);
+  assert.equal(header.version, 610975744);
+  assert.equal(header.nonce, 726832151);
 
-    assert.deepEqual(header.toBytes(), headerBytes);
-    assert.equal(header.toString(), "BlockHeader hash=00000000000000000000b1a3614f5b43589011f52dcf2c67c9e66554823ed233");
+  assert.deepEqual(header.toBytes(), headerBytes);
+  assert.equal(header.toString(), "BlockHeader hash=00000000000000000000b1a3614f5b43589011f52dcf2c67c9e66554823ed233");
 
-    assert.throws(() => BlockHeader.fromBytes(new Uint8Array(79)));
-    assert.throws(() => BlockHeader.fromBytes(new Uint8Array(81)));
-    assert.throws(() => BlockHeader.fromBytes(new Uint8Array(0)));
+  assert.throws(() => BlockHeader.fromBytes(new Uint8Array(79)));
+  assert.throws(() => BlockHeader.fromBytes(new Uint8Array(81)));
+  assert.throws(() => BlockHeader.fromBytes(new Uint8Array(0)));
 
-    header.dispose();
+  header.dispose();
 
-    console.log("✓ BlockHeader tests passed");
-    console.log();
+  console.log("✓ BlockHeader tests passed");
+  console.log();
 }
 
 /**
  * Block Serialization & Instantiation Suite
  */
 function testBlockClass(genesisBlockBytes: Uint8Array): void {
-    console.log("=== Testing Block ===");
+  console.log("=== Testing Block ===");
 
-    const block = Block.fromBytes(genesisBlockBytes);
+  const block = Block.fromBytes(genesisBlockBytes);
 
-    assert.equal(block.transactions.length, 1);
-    assert.equal(block.blockHeader.blockHash.toString(), block.blockHash.toString());
-    assert.equal(block.toString(), `<Block hash=${block.blockHash.toString()} txs=1>`);
+  assert.equal(block.transactions.length, 1);
+  assert.equal(block.blockHeader.blockHash.toString(), block.blockHash.toString());
+  assert.equal(block.toString(), `<Block hash=${block.blockHash.toString()} txs=1>`);
 
-    console.log("✓ Block tests passed");
-    console.log();
+  console.log("✓ Block tests passed");
+  console.log();
 }
 /**
  * Consensus Rules Block Validation Suite
  */
 function testBlockCheck(genesisBlockBytes: Uint8Array): void {
-    console.log("=== Testing Block Check ===");
+  console.log("=== Testing Block Check ===");
 
-    const block = Block.fromBytes(genesisBlockBytes);
-    const consensusParams = new ChainParameters(ChainType.REGTEST).consensusParams;
+  const block = Block.fromBytes(genesisBlockBytes);
+  const consensusParams = new ChainParameters(ChainType.REGTEST).consensusParams;
 
-    const state = block.check(consensusParams);
-    assert.equal(state.validationMode, ValidationMode.VALID);
+  const state = block.check(consensusParams);
+  assert.equal(state.validationMode, ValidationMode.VALID);
 
-    assert.equal(BlockCheckFlags.ALL, BlockCheckFlags.POW | BlockCheckFlags.MERKLE);
+  assert.equal(BlockCheckFlags.ALL, BlockCheckFlags.POW | BlockCheckFlags.MERKLE);
 
-    console.log("✓ Block Check tests passed");
-    console.log();
+  console.log("✓ Block Check tests passed");
+  console.log();
 }
 
 /**
  * Mutated Merkle Root Toggling Suite
  */
 function testBlockCheckInvalidMerkle(genesisBlockBytes: Uint8Array): void {
-    console.log("=== Testing Block Check Invalid Merkle ===");
+  console.log("=== Testing Block Check Invalid Merkle ===");
 
-    const consensusParams = new ChainParameters(ChainType.REGTEST).consensusParams;
-    const raw = new Uint8Array(genesisBlockBytes);
-    
-    raw[36] ^= 0xFF; 
-    const badBlock = Block.fromBytes(raw);
+  const consensusParams = new ChainParameters(ChainType.REGTEST).consensusParams;
+  const raw = new Uint8Array(genesisBlockBytes);
 
-    const stateInvalid = badBlock.check(consensusParams, BlockCheckFlags.MERKLE);
-    assert.equal(stateInvalid.validationMode, ValidationMode.INVALID);
-    assert.equal(stateInvalid.blockValidationResult, BlockValidationResult.MUTATED);
+  raw[36] ^= 0xFF;
+  const badBlock = Block.fromBytes(raw);
 
-    const stateValid = badBlock.check(consensusParams, BlockCheckFlags.BASE);
-    assert.equal(stateValid.validationMode, ValidationMode.VALID);
+  const stateInvalid = badBlock.check(consensusParams, BlockCheckFlags.MERKLE);
+  assert.equal(stateInvalid.validationMode, ValidationMode.INVALID);
+  assert.equal(stateInvalid.blockValidationResult, BlockValidationResult.MUTATED);
 
-    console.log("✓ Block Check Invalid Merkle tests passed");
-    console.log();
+  const stateValid = badBlock.check(consensusParams, BlockCheckFlags.BASE);
+  assert.equal(stateValid.validationMode, ValidationMode.VALID);
+
+  console.log("✓ Block Check Invalid Merkle tests passed");
+  console.log();
 }
 
 /**
  * Historical Block Undo Context Suite
  */
 function testBlockUndo(chainmanRegtest: ChainstateManager): void {
-    console.log("=== Testing Block Undo ===");
+  console.log("=== Testing Block Undo ===");
 
-    const idx = chainmanRegtest.getActiveChain().blockTreeEntries.get(202);
-    const undo = chainmanRegtest.blockSpentOutputs.get(idx);
-    const transactions = undo.transactions;
-    
-    assert.equal(transactions.length, 20);
-    for (const tx of transactions) {
-        assert.ok(tx instanceof TransactionSpentOutputs);
-    }
+  const idx = chainmanRegtest.getActiveChain().blockTreeEntries.get(202);
+  const undo = chainmanRegtest.blockSpentOutputs.get(idx);
+  const transactions = undo.transactions;
 
-    assert.equal(undo.toString(), "<BlockSpentOutputs txs=20>");
+  assert.equal(transactions.length, 20);
+  for (const tx of transactions) {
+    assert.ok(tx instanceof TransactionSpentOutputs);
+  }
 
-    console.log("✓ Block Undo tests passed");
-    console.log();
+  assert.equal(undo.toString(), "<BlockSpentOutputs txs=20>");
+
+  console.log("✓ Block Undo tests passed");
+  console.log();
 }
 
 /**
  * Master Test Orchestrator
  */
 function testBlock(chainmanRegtest: ChainstateManager, genesisBlockBytes: Uint8Array): void {
-    try {
-        testBlockTreeEntry(chainmanRegtest);
-        testBlockTreeEntryGetAncestor(chainmanRegtest);
-        testBlockTreeEntryGetAncestorFork(chainmanRegtest);
-        testBlockHash();
-        testBlockHeader();
-        testBlockClass(genesisBlockBytes);
-        testBlockCheck(genesisBlockBytes);
-        testBlockCheckInvalidMerkle(genesisBlockBytes);
-        testBlockUndo(chainmanRegtest);
-        console.log("ALL TESTS PASSED");
-    } catch (err) {
-        console.error();
-        console.error("TEST FAILED");
-        console.error(err);
-        process.exit(1);
-    }
+  try {
+    testBlockTreeEntry(chainmanRegtest);
+    testBlockTreeEntryGetAncestor(chainmanRegtest);
+    testBlockTreeEntryGetAncestorFork(chainmanRegtest);
+    testBlockHash();
+    testBlockHeader();
+    testBlockClass(genesisBlockBytes);
+    testBlockCheck(genesisBlockBytes);
+    testBlockCheckInvalidMerkle(genesisBlockBytes);
+    testBlockUndo(chainmanRegtest);
+    console.log("ALL TESTS PASSED");
+  } catch (err) {
+    console.error();
+    console.error("TEST FAILED");
+    console.error(err);
+    process.exit(1);
+  }
 }
 
 // ============================================================================
@@ -268,44 +268,44 @@ const blocksDir = path.join(tempDir, "blocks");
 fs.mkdirSync(blocksDir, { recursive: true });
 
 try {
-    const opts = new ContextOptions();
-    opts.set_chainparams(new ChainParameters(ChainType.REGTEST));
+  const opts = new ContextOptions();
+  opts.set_chainparams(new ChainParameters(ChainType.REGTEST));
 
-    const context = new Context(opts);
+  const context = new Context(opts);
 
-    const cmOpts = new ChainstateManagerOptions(
-        context,
-        tempDir,
-        blocksDir
-    );
+  const cmOpts = new ChainstateManagerOptions(
+    context,
+    tempDir,
+    blocksDir
+  );
 
-    const chainman = new ChainstateManager(cmOpts);
+  const chainman = new ChainstateManager(cmOpts);
 
-    const blocksFile = path.join(__dirname, "data", "regtest", "blocks.txt");
-    if (!fs.existsSync(blocksFile)) {
-        throw new Error(`Missing expected test fixture file at: ${blocksFile}`);
-    }
+  const blocksFile = path.join(__dirname, "data", "regtest", "blocks.txt");
+  if (!fs.existsSync(blocksFile)) {
+    throw new Error(`Missing expected test fixture file at: ${blocksFile}`);
+  }
 
-    console.log("Ingesting block chain test fixtures into engine...");
-    const fileContent = fs.readFileSync(blocksFile, "utf8");
-    const hexBlocks = fileContent.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  console.log("Ingesting block chain test fixtures into engine...");
+  const fileContent = fs.readFileSync(blocksFile, "utf8");
+  const hexBlocks = fileContent.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
-    for (const hex of hexBlocks) {
-        const blockBytes = Uint8Array.from(Buffer.from(hex, "hex"));
-        const block = Block.fromBytes(blockBytes);
-        chainman.processBlock(block);
-    }
-    console.log(`Successfully indexed ${hexBlocks.length} blocks.\n`);
+  for (const hex of hexBlocks) {
+    const blockBytes = Uint8Array.from(Buffer.from(hex, "hex"));
+    const block = Block.fromBytes(blockBytes);
+    chainman.processBlock(block);
+  }
+  console.log(`Successfully indexed ${hexBlocks.length} blocks.\n`);
 
-    // FIXED: Extracted as a pure cross-runtime native Uint8Array to satisfy strict assertions
-    const genesisBlockBytes = Uint8Array.from(Buffer.from(GENESIS_BLOCK_HEX, "hex"));
+  // FIXED: Extracted as a pure cross-runtime native Uint8Array to satisfy strict assertions
+  const genesisBlockBytes = Uint8Array.from(Buffer.from(GENESIS_BLOCK_HEX, "hex"));
 
-    // Run the validation testing suite
-    testBlock(chainman, genesisBlockBytes);
+  // Run the validation testing suite
+  testBlock(chainman, genesisBlockBytes);
 
-    if (typeof (chainman as any).dispose === "function") (chainman as any).dispose();
-    if (typeof (context as any).dispose === "function") (context as any).dispose();
+  if (typeof (chainman as any).dispose === "function") (chainman as any).dispose();
+  if (typeof (context as any).dispose === "function") (context as any).dispose();
 
 } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(tempDir, { recursive: true, force: true });
 }

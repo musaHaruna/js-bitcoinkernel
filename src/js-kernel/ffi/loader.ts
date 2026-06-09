@@ -13,7 +13,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/* 
+/*
  * Platform Abstraction Layer
  *
  * Different operating systems ship different dynamic library formats:
@@ -40,7 +40,7 @@ function getPlatformPattern(): string[] {
 
 /*
  * Development Mode Binary Resolution
- * 
+ *
  * In development environments, compiled binaries may exist in multiple
  * local build directories depending on the build system in use.
  *
@@ -81,7 +81,7 @@ function findDevLib(): string {
   );
 }
 
-/* 
+/*
  * Production Mode Binary Resolution
  *
  * In production (packaged/distributed builds), native binaries are expected
@@ -116,9 +116,9 @@ function findProdLib(): string {
   );
 }
 
-/* 
+/*
  * Environment-Aware Library Resolver
- * 
+ *
  *
  * Automatically determines whether the runtime is:
  *
@@ -136,7 +136,7 @@ function resolveLib(): string {
   return findDevLib();
 }
 
-/* 
+/*
  * Native Library Loader
  *
  * Loads the platform-specific Bitcoin Kernel dynamic library using koffi.

@@ -15,48 +15,48 @@ const __dirname = path.dirname(__filename);
  * ChainstateManager Regtest Fixture & Block Processing Test Suite
  */
 function testChainmanRegtestInitialization(): void {
-    console.log("=== Testing ChainstateManager Regtest Setup ===");
+  console.log("=== Testing ChainstateManager Regtest Setup ===");
 
-    console.log("Creating temporary directory...");
-    // Emulates python's tempfile.TemporaryDirectory()
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pbk-test-"));
+  console.log("Creating temporary directory...");
+  // Emulates python's tempfile.TemporaryDirectory()
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pbk-test-"));
 
-        try {
-            console.log(`Initializing ChainstateManager in: ${tempDir}`);
-            const chainMan = loadChainman(tempDir, ChainType.REGTEST);
+  try {
+    console.log(`Initializing ChainstateManager in: ${tempDir}`);
+    const chainMan = loadChainman(tempDir, ChainType.REGTEST);
 
-        const blocksPath = path.join(__dirname, "data", "regtest", "blocks.txt");
-        console.log(`Loading verification blocks from: ${blocksPath}`);
-        
-        const fileContent = fs.readFileSync(blocksPath, "utf8");
-        const lines = fileContent.split(/\r?\n/).filter(line => line.trim().length > 0);
+    const blocksPath = path.join(__dirname, "data", "regtest", "blocks.txt");
+    console.log(`Loading verification blocks from: ${blocksPath}`);
 
-        console.log(`Processing ${lines.length} sequential blocks...`);
-        for (let i = 0; i < lines.length; i++) {
-            const hexLine = lines[i].trim();
-            const blockBytes = Uint8Array.from(Buffer.from(hexLine, "hex"));
-            const block = Block.fromBytes(blockBytes);
-            
-            // Validate block submission passes consensus rules
-            const processed = chainMan.processBlock(block);
-            assert.equal(processed, true, `Block at sequence index ${i} failed processing rules`);
-        }
+    const fileContent = fs.readFileSync(blocksPath, "utf8");
+    const lines = fileContent.split(/\r?\n/).filter(line => line.trim().length > 0);
 
-        console.log("✓ All regtest blocks successfully synced onto temporary chainstate");
-        
-        // Clean up internal context allocation handles if supported
-        if (typeof (chainMan as any).dispose === "function") {
-            (chainMan as any).dispose();
-        }
+    console.log(`Processing ${lines.length} sequential blocks...`);
+    for (let i = 0; i < lines.length; i++) {
+      const hexLine = lines[i].trim();
+      const blockBytes = Uint8Array.from(Buffer.from(hexLine, "hex"));
+      const block = Block.fromBytes(blockBytes);
 
-    } finally {
-        console.log("Cleaning up temporary directory...");
-        // Emulates temporary directory lifecycle cleanup hook
-        fs.rmSync(tempDir, { recursive: true, force: true });
+      // Validate block submission passes consensus rules
+      const processed = chainMan.processBlock(block);
+      assert.equal(processed, true, `Block at sequence index ${i} failed processing rules`);
     }
 
-    console.log("✓ ChainstateManager environment test passed");
-    console.log();
+    console.log("✓ All regtest blocks successfully synced onto temporary chainstate");
+
+    // Clean up internal context allocation handles if supported
+    if (typeof (chainMan as any).dispose === "function") {
+      (chainMan as any).dispose();
+    }
+
+  } finally {
+    console.log("Cleaning up temporary directory...");
+    // Emulates temporary directory lifecycle cleanup hook
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  console.log("✓ ChainstateManager environment test passed");
+  console.log();
 }
 
 /**
@@ -66,15 +66,15 @@ function testChainmanRegtestInitialization(): void {
  * Exits with error code 1 if any assertion fails.
  */
 function testFixtureSuite(): void {
-    try {
-        testChainmanRegtestInitialization();
-        console.log("ALL TESTS PASSED");
-    } catch (err) {
-        console.error();
-        console.error("TEST FAILED");
-        console.error(err);
-        process.exit(1);
-    }
+  try {
+    testChainmanRegtestInitialization();
+    console.log("ALL TESTS PASSED");
+  } catch (err) {
+    console.error();
+    console.error("TEST FAILED");
+    console.error(err);
+    process.exit(1);
+  }
 }
 
 testFixtureSuite();
