@@ -91,6 +91,26 @@ Example:
 `-j 1` slow (e.g one file at a time)
 `-j 10` faster (multiple files at once, depending on CPU capacity)
 
+### 4. Install NPM Dependencies
+
+Make sure you have [Node.js](https://nodejs.org/en) installed.
+
+Then run:
+```bash
+npm install
+```
+### 5. Run Tests
+
+After building everything, run the test suite:
+```
+npm run test
+```
+This executes:
+
+```
+"test": "tsx ./tests/index.ts"
+```
+
 ### Docker Build Option (For Linux Shared Libraries)
 If you are on macOS but need to compile the .so binary for a Linux environment, you can use the included Dockerfile to build inside an isolated Ubuntu container. This method outputs the artifact right back into your host workspace via volume mounts.
 
@@ -118,53 +138,42 @@ Once the container finishes compiling, your Linux shared library will be availab
 ```Plaintext
 build-linux/bitcoin-build/src/kernel/libbitcoinkernel.so
 ```
-### 4. Install NPM Dependencies
 
-Make sure you have [Node.js](https://nodejs.org/en) installed.
+## Installation & Usage
+You can integrate js-bitcoinkernel into your external projects using either the standard npm registry installation or a local link for development purposes.
 
-Then run:
-```bash
-npm install
-```
-## Run Tests
-
-After building everything, run the test suite:
-```
-npm run test
-```
-This executes:
-
-```
-"test": "tsx ./tests/index.ts"
-```
-## Using `js-bitcoin-kernel` in Another Project
-
-This library is not published to npm yet. That means you cannot install it using `npm install js-bitcoin-kernel`.
-
-Instead, you use it locally by building it and linking it into another project check installation steps for that.
-
-#### 1. Build the project
+### Method 1: Standard Installation (Recommended)
 Run:
 ```
+Bash
+npm install js-bitcoinkernel
+```
+Then, import it into your TypeScript or JavaScript project:
+
+```TypeScript
+import { BitcoinKernel } from 'js-bitcoinkernel';
+```
+
+### Method 2: Local Development & Linking (Alternative)
+If you are modifying the js-bitcoinkernel source code locally and want to test those live changes instantly in a separate test project without republishing to npm, use npm link.
+
+#### 1. Build and Link the Core Library
+Navigate to your local js-bitcoinkernel root directory and build the project, then register it globally on your machine:
+
+```Bash
+# Inside js-bitcoinkernel/
 npm run build
-```
-#### 2. Link the Package Locally
-
-Since it is not on npm, you link it using this method:
-
-Inside js-bitcoin-kernel root directory:
-
-Run:
-
-```
 npm link
 ```
+#### 2. Connect Your Target Project
+Navigate to the root directory of the separate project where you want to consume the library, and wire up the symlink:
 
-Then inside your external project:
-
-```
+```Bash
+# Inside your-other-project/
 npm link js-bitcoinkernel
 ```
+**Development Tip:** If you change the TypeScript code inside js-bitcoinkernel, simply rerun `npm run build` in its directory. The target project will immediately pick up the compiled changes through the symlink without needing to reinstall.
+
 ## Example: Basic Usage
 
 ```javascript
