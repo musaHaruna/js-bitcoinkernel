@@ -183,6 +183,9 @@ console.log("Version:", header.version);
 header.dispose();
 ```
 
+## Documentation
+See the [documentation](https://musaharuna.github.io/js-bitcoinkernel/) for more information, usage examples, and more.
+
 ## References
 - [libbitcoinkernel](https://github.com/bitcoin/bitcoin/pull/30595)
 - [Bitcoin Core build documentation](https://github.com/bitcoin/bitcoin/blob/master/doc/build-unix.md)

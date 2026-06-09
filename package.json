@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "build": "tsc && tsc-alias && cpy \"src/js-kernel/binaries/**/*\" dist/js-kernel/binaries",
+    "prepublishOnly": "npm run build",
     "dev": "tsx ./src/js-kernel/index.ts",
     "test": "tsx ./tests/index.ts",
     "start": "node dist/js-kernel/index.js",
@@ -16,9 +17,16 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "bitcoin",
+    "bitcoin-core",
+    "libbitcoinkernel",
+    "ffi",
+    "koffi",
+    "typescript"
+  ],
+  "author": "Musa Haruna",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "koffi": "^3.0.1"
