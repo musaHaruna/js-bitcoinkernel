@@ -33,7 +33,7 @@ The system is composed of three main layers:
   - `libbitcoinkernel.dylib` (macOS)
   - `bitcoinkernel.dll` (Windows)
 
-> ⚠️ Note: You must compile Bitcoin Core locally to generate the native binary for your operating system. At the moment, only the macOS binary is exposed and tested in this setup.
+> ⚠️ **Note:** You must compile Bitcoin Core to generate the native binary for your target operating system. This repository supports direct local builds for **macOS** as well as containerized builds via **Docker** to easily generate and extract the **Linux** shared library (`.so`).
 
 #### 2. FFI Layer (Koffi)
 - Loads native shared libraries
@@ -91,6 +91,33 @@ Example:
 `-j 1` slow (e.g one file at a time)
 `-j 10` faster (multiple files at once, depending on CPU capacity)
 
+### Docker Build Option (For Linux Shared Libraries)
+If you are on macOS but need to compile the .so binary for a Linux environment, you can use the included Dockerfile to build inside an isolated Ubuntu container. This method outputs the artifact right back into your host workspace via volume mounts.
+
+1. Build the Docker Builder Image
+Ensure Docker Desktop is running on your machine, then run:
+
+```Bash
+docker build -t bitcoin-kernel-builder .
+```
+2. Compile via Containerized Volume Mount
+Run the compilation pipeline inside the container. We use an isolated build-linux folder so absolute build paths inside the container do not conflict with your local macOS host environment:
+
+```Bash
+docker run --rm -v "$(pwd)":/workspace bitcoin-kernel-builder bash -c "
+    mkdir -p build-linux && \
+    cd build-linux && \
+    cmake .. && \
+    cmake --build .
+"
+```
+
+3. Locate Your Linux Binary
+Once the container finishes compiling, your Linux shared library will be available on your host machine at:
+
+```Plaintext
+build-linux/bitcoin-build/src/kernel/libbitcoinkernel.so
+```
 ### 4. Install NPM Dependencies
 
 Make sure you have [Node.js](https://nodejs.org/en) installed.
@@ -136,7 +163,7 @@ npm link
 Then inside your external project:
 
 ```
-npm link js-bitcoin-kernel
+npm link js-bitcoinkernel
 ```
 ## Example: Basic Usage
 
