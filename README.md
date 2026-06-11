@@ -144,8 +144,7 @@ You can integrate js-bitcoinkernel into your external projects using either the 
 
 ### Method 1: Standard Installation (Recommended)
 Run:
-```
-Bash
+```Bash
 npm install js-bitcoinkernel
 ```
 Then, import it into your TypeScript or JavaScript project:
