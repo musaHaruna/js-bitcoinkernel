@@ -6,7 +6,8 @@ export default defineConfig({
   title: "js-bitcoinkernel",
   description: "TypeScript bindings for Bitcoin Core libbitcoinkernel.",
   lang: "en-US",
-  base: process.env.VITEPRESS_BASE ?? "/",
+  // Uses environment variable if present; falls back to repository path for local/prod safety
+  base: process.env.VITEPRESS_BASE || "/js-bitcoinkernel/",
   cleanUrls: true,
   lastUpdated: true,
 

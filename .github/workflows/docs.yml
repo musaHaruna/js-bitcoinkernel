@@ -42,7 +42,7 @@ jobs:
       - name: Build documentation
         run: npm run docs:build
         env:
-          VITEPRESS_BASE: /${{ github.event.repository.name }}/
+          VITEPRESS_BASE: /js-bitcoinkernel/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -65,4 +65,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        
