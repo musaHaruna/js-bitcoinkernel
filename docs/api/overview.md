@@ -19,7 +19,7 @@ Avoid importing from `src/js-kernel/ffi/*`, `writer`, or `util/*` in application
 | [Scripts](/api/script) | `ScriptPubkey`, script flags/statuses, `PrecomputedTransactionData`, `ScriptVerifyException`. |
 | [Transactions](/api/transaction) | `Transaction`, `Txid`, inputs, outpoints, outputs, coins, spent-output collections. |
 | [Validation Callbacks](/api/validation) | `ValidationInterfaceCallbacks`. |
-| [Notifications](/api/notifications) | `NotificationInterfaceCallbacks` and `defaultNotificationCallbacks` from a direct submodule. Not root-exported today. |
+| [Notifications](/api/notifications) | `NotificationInterfaceCallbacks`, `SynchronizationState`, and the `NotificationCallbackOptions` type. |
 | [Bootstrap Helpers](/api/init) | `makeContext`, `loadChainman`. |
 | [Errors](/api/errors) | `KernelException`, `ProcessBlockException`, `ProcessBlockHeaderException`. |
 
@@ -102,4 +102,4 @@ try {
 
 The root export is the intended stable API surface. Some source files export additional helpers for tests or internal use, but they are not re-exported from `index.ts`. This reference clearly labels those cases when relevant.
 
-One current packaging wrinkle is `notifications.ts`: `ContextOptions` exposes `set_notifications(...)`, but `NotificationInterfaceCallbacks` is not exported from the package root. Use the [Notifications](/api/notifications) page only if you are comfortable importing a direct built submodule until the root export changes.
+`NotificationInterfaceCallbacks` and its option types are available from the package root. The default console-printing notification instance remains a direct-module helper.

@@ -83,6 +83,7 @@ Purpose: wrapper for an 80-byte Bitcoin block header.
 | `BlockHeader.fromBytes(rawHeader)` | `Uint8Array` of exactly 80 bytes. | Owned `BlockHeader`. | Throws on wrong length or native parse failure. |
 | `blockHash` | None. | Owned `BlockHash`. | Computes the double-SHA256 header hash. |
 | `prevHash` | None. | Borrowed `BlockHash` view. | Keep the header alive while using it. |
+| `merkleRoot` | None. | 32-byte `Uint8Array` in serialized byte order. | The transaction Merkle root committed by the header. |
 | `timestamp` | None. | JavaScript `Date`. | Converts native Unix seconds to milliseconds. |
 | `bits` | None. | `number`. | Compact target field. |
 | `version` | None. | `number`. | Signed 32-bit header version. |
@@ -148,7 +149,7 @@ Purpose: view of a block index node in the native block tree.
 | --- | --- | --- | --- |
 | `blockHash` | None. | Borrowed `BlockHash` view. | Entry must remain alive. |
 | `height` | None. | `number`. | Genesis is height `0`. |
-| `previous` | None. | Borrowed `BlockTreeEntry` view. | Genesis has no meaningful previous entry. |
+| `previous` | None. | Borrowed `BlockTreeEntry` view or `null`. | Genesis returns `null`. |
 | `blockHeader` | None. | Owned `BlockHeader`. | Independent copy. |
 | `getAncestor(height)` | Target height. | Borrowed `BlockTreeEntry`. | Throws `RangeError` outside `[0, this.height]`. |
 | `equals(other)` | Any value. | `boolean`. | Compares native identity. |
@@ -190,7 +191,7 @@ Purpose: wrapper for a full serialized Bitcoin block.
 | `blockHash` | None. | Owned `BlockHash`. | Hash of the header. |
 | `blockHeader` | None. | Owned `BlockHeader`. | Independent header copy. |
 | `transactions` | None. | `TransactionSequence`. | Transaction views are tied to the block. |
-| `toBytes()` | None. | Serialized block bytes. | Uses callback streaming; throws on callback/native errors. |
+| `toBytes()` | None. | Serialized block bytes. | Serializes every chunk using the native zero-on-success writer contract; throws on callback/native errors. |
 | `check(consensusParams, flags?)` | `ConsensusParams`, optional `BlockCheckFlags`. | Owned `BlockValidationState`. | Throws if native status and state disagree or binding is missing. |
 | `copy()` | None. | Owned copy. | Throws if disposed. |
 

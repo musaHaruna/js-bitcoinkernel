@@ -73,6 +73,7 @@ Purpose: network-specific parameter container.
 | API | Inputs | Returns | Errors and caveats |
 | --- | --- | --- | --- |
 | `new ChainParameters(chainType)` | `ChainType`. | Owned `ChainParameters`. | Throws if native allocation fails. |
+| `ChainParameters.createSignet(challenge)` | Signet challenge script bytes. | Owned `ChainParameters`. | Builds parameters for a custom signet challenge. |
 | `consensusParams` | None. | Borrowed `ConsensusParams`. | Parent must remain alive. |
 | `copy()` | None. | Owned copy. | Throws if disposed or copy binding unavailable. |
 
@@ -92,6 +93,7 @@ Purpose: configuration builder for `ChainstateManager`.
 | `new ChainstateManagerOptions(context, datadir, blocksDir)` | `Context`, data dir, blocks dir. | Owned options object. | Paths are UTF-8 encoded and passed to native code. |
 | `setWipeDbs(wipeBlockTreeDb, wipeChainstateDb)` | Two booleans. | `0` on success, nonzero on invalid combination/failure. | Wiping block tree without chainstate is invalid. |
 | `setWorkerThreadsNum(workerThreads)` | Number. | `void`. | Native layer clamps values. |
+| `setDatabaseCacheBytes(bytes)` | Integer `number` or `bigint`. | `void`. | Minimum is 4 MiB; throws `RangeError` when the kernel rejects the size. |
 | `updateBlockTreeDbInMemory(value)` | Boolean. | `void`. | Useful for tests. |
 | `updateChainstateDbInMemory(value)` | Boolean. | `void`. | Useful for tests. |
 
@@ -156,9 +158,9 @@ Purpose: native validation, storage, and active-chain coordinator.
 | `blockSpentOutputs` | None. | `BlockSpentOutputsMap`. | Reads undo data from disk. |
 | `bestEntry` | None. | Borrowed `BlockTreeEntry`. | Best-work entry known to manager. |
 | `getActiveChain()` | None. | Borrowed `Chain` view. | Changes after processing. |
-| `importBlocks(paths)` | Array of path-like values. | `boolean`. | Imports block files by path. Empty array returns falsey. |
+| `importBlocks(paths)` | Array of path-like values. | `boolean`. | Imports block files by path. Returns `true` when the native operation succeeds, including an empty array; `false` on native failure. |
 | `processBlock(block)` | `Block`. | `boolean` for new block. | Throws `ProcessBlockException` on native error. |
-| `processBlockHeader(header)` | `BlockHeader`. | Owned `BlockValidationState`. | Throws `ProcessBlockHeaderException` on native error. |
+| `processBlockHeader(header)` | `BlockHeader`. | Owned `BlockValidationState`. | Invalid headers return a state with `validationMode === ValidationMode.INVALID`; inspect the state. A null native result throws `ProcessBlockHeaderException`. |
 
 Usage:
 

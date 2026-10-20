@@ -26,7 +26,7 @@ import { ChainType, makeContext } from "js-bitcoinkernel";
 const context = makeContext(ChainType.SIGNET);
 ```
 
-Caveat: the helper creates a temporary `ChainParameters` and `ContextOptions`. Keep the returned `Context` alive while dependent chainstate objects exist.
+Temporary chain parameters and options are disposed before returning. The native context owns the copied configuration.
 
 ## `loadChainman(datadir, chainType?, validationCallbacks?)`
 
@@ -56,6 +56,7 @@ console.log(chainman.getActiveChain().height);
 
 Caveats:
 
+- Disposes temporary context/options handles on success and failure. The returned manager retains the shared native context.
 - Uses `<datadir>/blocks` as the block storage path.
 - Resolves `datadir` to an absolute path before passing it to native code.
 - Do not share the directory with a running `bitcoind`.

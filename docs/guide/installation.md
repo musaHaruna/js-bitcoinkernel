@@ -9,9 +9,9 @@ Both must be available before examples that touch the native API can run.
 
 ## Requirements
 
-- Node.js 18 or newer.
+- Node.js 22.13 or newer for development and the current lint/build toolchain.
 - npm.
-- CMake 3.22 or newer.
+- CMake 3.24 or newer.
 - A compiler toolchain that can build Bitcoin Core.
 - A platform-compatible `libbitcoinkernel` dynamic library.
 
@@ -22,44 +22,41 @@ The package is an ES module package, so examples use `import` syntax.
 From the repository root:
 
 ```bash
+git submodule update --init --recursive
 npm install
 ```
 
+The official `bitcoin/bitcoin` submodule is pinned to the exact commit used by the wrapper and native binaries. A fresh clone can initialize it in one step with `git clone --recurse-submodules <repository-url>`.
+
 ## Build The Native Kernel
 
-The root `CMakeLists.txt` treats `depend/bitcoin` as an external project and builds only the Bitcoin Core kernel target.
+Build the pinned Bitcoin Core source and write a manifest that records its Git commit with:
 
 ```bash
-cmake -B build
-cmake --build build -j 10
+npm run native:build
 ```
 
-The build is configured with wallet, GUI, daemon, CLI, util, and test targets disabled. The important target is `bitcoinkernel`.
+On macOS this produces one universal binary. On Linux it produces the binary for the current CPU; use the release workflow to build every packaged target. Verify the pinned source and all packaged manifests with:
+
+```bash
+npm run native:verify
+```
 
 ## Native Library Resolution
 
-At runtime, the loader searches for a platform-specific dynamic library:
+At runtime, the loader selects an exact packaged target:
 
-- macOS: `libbitcoinkernel.dylib`
-- Linux: `libbitcoinkernel.so`
-- Windows: `bitcoinkernel.dll`
+| Runtime | Bundled target |
+| --- | --- |
+| macOS arm64 or x64 | `darwin-universal/libbitcoinkernel.dylib` |
+| Linux arm64 | `linux-arm64/libbitcoinkernel.so` |
+| Linux x64 | `linux-x64/libbitcoinkernel.so` |
 
-In development, it searches common build locations:
+The loader never falls back to another architecture. For an unsupported target, such as Windows, set `BITCOINKERNEL_LIB` to the absolute path of an ABI-compatible kernel library:
 
-```txt
-lib/
-build/
-build/bitcoin-build/lib/
-build/bitcoin-build/bin/
+```bash
+BITCOINKERNEL_LIB=/opt/lib/libbitcoinkernel.dll node app.js
 ```
-
-In packaged builds, it expects binaries under:
-
-```txt
-dist/js-kernel/binaries/
-```
-
-The current repository includes a macOS binary at `src/js-kernel/binaries/libbitcoinkernel.dylib`.
 
 ## Build The TypeScript Package
 
@@ -71,7 +68,7 @@ This compiles TypeScript, rewrites path aliases, and copies bundled native binar
 
 ## Local Linking
 
-The package is not currently documented as published to npm. To use it from another local project:
+To use the current build from another local project:
 
 ```bash
 npm run build
@@ -104,7 +101,7 @@ The loader could not find `libbitcoinkernel` in either packaged or development l
 
 ### Wrong platform binary
 
-Dynamic libraries are not portable across operating systems. A `.dylib` built on macOS cannot satisfy Linux or Windows runtimes.
+Dynamic libraries are not portable across operating systems or CPU architectures. Check `process.platform` and `process.arch`, or point `BITCOINKERNEL_LIB` to a matching build.
 
 ### Database lock failures
 

@@ -1,12 +1,12 @@
 # Notifications API
 
-The notifications module implements native kernel notification callbacks, but it is not currently re-exported from the package root. Treat this API as direct-module only unless the package root changes.
+Notification callbacks and their option types are exported from the package root.
 
 ```ts
-import { NotificationInterfaceCallbacks } from "js-bitcoinkernel/dist/js-kernel/notifications.js";
+import { NotificationInterfaceCallbacks } from "js-bitcoinkernel";
 ```
 
-The root API still exposes `ContextOptions.set_notifications(...)`, so this missing root export is an important packaging caveat.
+Attach an instance with `ContextOptions.set_notifications(...)` before creating a context.
 
 ## `NotificationInterfaceCallbacks`
 
@@ -14,7 +14,7 @@ Purpose: converts JavaScript notification callbacks into the native notification
 
 | Constructor input | Returns | Errors and caveats |
 | --- | --- | --- |
-| Object with optional notification hooks. | Instance with `.nativeStruct`. | Throws if an unknown callback key is supplied. Not exported from package root. |
+| Object with optional notification hooks. | Instance with `.nativeStruct`. | Throws for unknown keys or non-function handlers. |
 
 Supported hooks:
 
@@ -38,7 +38,11 @@ Errors:
 Caveats:
 
 - The helper strips the native `user_data` pointer before calling user functions.
-- The object stores callback anchors so callbacks are not garbage collected.
+- Persistent native callback registrations stay alive until the last native owner is destroyed.
+- Text is decoded as UTF-8 using the supplied byte length, preserving embedded NUL characters.
+- `state` is `SynchronizationState` (`INIT_REINDEX`, `INIT_DOWNLOAD`, `POST_INIT`), not `ChainType`.
+- Header heights and timestamps can arrive as `number` or `bigint`; normalize explicitly if needed.
+- The `block_tip` index is a raw borrowed pointer. Do not retain or free it.
 - Notifications can occur while kernel objects are shutting down, so callback code should be defensive.
 
 ## Usage

@@ -133,7 +133,7 @@ Purpose: connects native log messages to a JavaScript callback.
 
 | API | Inputs | Returns | Errors and caveats |
 | --- | --- | --- | --- |
-| `new LoggingConnection(cb)` | Function with exactly one `message: string` parameter. | Owned connection. | Throws `TypeError` if callback arity is not one. |
+| `new LoggingConnection(cb)` | Callable handler receiving a `message: string`. | Owned connection. | Throws `TypeError` for non-functions; default/rest parameters are accepted. |
 
 Usage:
 
@@ -143,7 +143,7 @@ const connection = new LoggingConnection((message) => {
 });
 ```
 
-The connection stores the native callback wrapper to prevent garbage collection.
+The connection registers a persistent native callback. Call `dispose()` or use `using` to disconnect and release the callback slot. Log text is decoded using its native byte length.
 
 ## `KernelLogViewer`
 

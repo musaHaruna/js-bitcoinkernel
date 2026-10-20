@@ -85,7 +85,7 @@ chainman.dispose();
 
 ## Memory Cleanup
 
-Most owned wrappers support `dispose()`. Borrowed child views should not be disposed manually. A typical pattern is:
+Owned wrappers require `dispose()` or `using`; garbage collection does not free native resources. Disposing a borrowed view invalidates that view without freeing its owner. Accessing a view after its owner is disposed throws instead of calling native code with freed memory. A typical pattern is:
 
 ```ts
 const tx = new Transaction(Buffer.from(rawTxHex, "hex"));

@@ -61,7 +61,7 @@ try {
 
 ## Callback Lifetime
 
-When callbacks are attached through `ContextOptions`, the wrapper keeps references to the JavaScript callback objects. This prevents V8 from collecting callback trampolines while the native kernel still owns function pointers.
+Attaching callbacks registers persistent Koffi trampolines. The kernel releases those registrations when the last shared native owner (options, context, context copy, or manager) is destroyed. Disposing the options or original context does not disconnect a surviving manager.
 
 ```ts
 const callbacks = new ValidationInterfaceCallbacks({

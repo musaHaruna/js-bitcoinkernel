@@ -66,7 +66,7 @@ Internal modules such as `ffi/bindings`, `ffi/loader`, `writer`, and `util/*` ar
 The codebase is still young. The wrapper exposes a useful subset of `libbitcoinkernel`, but some rough edges remain:
 
 - The native binary is platform-specific.
-- The bundled binary is currently macOS-oriented.
+- Bundled binaries support macOS universal (`arm64` and `x64`) plus Linux `arm64` and `x64`. Windows requires a compatible custom build supplied through `BITCOINKERNEL_LIB`.
 - Some source modules export helpers that are not re-exported from the package root.
 - Several tests act as examples; this site turns those patterns into stable tutorials and API notes.
 

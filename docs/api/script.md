@@ -95,7 +95,7 @@ Purpose: native sighash/cache structure for verifying transaction inputs efficie
 
 | API | Inputs | Returns | Errors and caveats |
 | --- | --- | --- | --- |
-| `new PrecomputedTransactionData(txTo, spentOutputs?)` | Spending `Transaction`, optional `TransactionOutput[]`. | Owned precomputed cache. | Taproot requires spent outputs. Throws if native allocation fails. |
+| `new PrecomputedTransactionData(txTo, spentOutputs?)` | Spending `Transaction`, optional `TransactionOutput[]`. | Owned precomputed cache. | Taproot requires spent outputs. A nonempty array must match the input count or `RangeError` is thrown before calling C. |
 | `copy()` | None. | Owned copy. | Throws if disposed or copy binding unavailable. |
 
 Usage:
@@ -115,7 +115,7 @@ Purpose: wrapper for a raw Bitcoin output script.
 | `toBytes()` | None. | Script bytes. | Uses native callback streaming. |
 | `toHex()` | None. | Lowercase hex string. | Convenience wrapper around `toBytes()`. |
 | `toString()` | None. | Same as `toHex()`. | Diagnostic display. |
-| `verify(amount, txTo, precomputedTxdata, inputIndex, flags)` | Amount in sats, spending transaction, precomputed data or null, input index, flags. | `boolean`. | Throws `ScriptVerifyException` for native status errors. |
+| `verify(amount, txTo, precomputedTxdata, inputIndex, flags)` | Amount in sats, spending transaction, precomputed data or null, input index, flags. | `boolean`. | Throws `ScriptVerifyException` for native status errors and `RangeError` for invalid indices, unsupported flag bits, or invalid amounts. |
 | `copy()` | None. | Owned copy. | Throws if disposed. |
 
 Usage:

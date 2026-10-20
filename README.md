@@ -1,6 +1,6 @@
 # js-bitcoinkernel
 
-A TypeScript a wrapper around [ libbitcoinkernel](https://github.com/bitcoin/bitcoin/pull/30595) that provides safe, structured access to native Bitcoin data structures through a C FFI layer.
+A TypeScript wrapper around [libbitcoinkernel](https://github.com/bitcoin/bitcoin/pull/30595) that provides safe, structured access to native Bitcoin data structures through a C FFI layer.
 
 It wraps a native Bitcoin kernel library using `koffi` and exposes high-level objects such as `BlockHash` and `BlockHeader` for use in JavaScript/TypeScript applications.
 
@@ -16,7 +16,7 @@ This project acts as a thin abstraction layer between JavaScript and a native Bi
 
 It allows you to:
 
-- Load a native Bitcoin kernel C library 
+- Load a native Bitcoin kernel C library
 - Work with Bitcoin block headers in a structured way
 - Perform operations like hashing, serialization, and equality checks
 - Safely manage native memory through RAII-style wrappers
@@ -28,12 +28,8 @@ The system is composed of three main layers:
 
 #### 1. Native Layer (C/C++)
 - Implements Bitcoin logic (hashing, parsing, serialization)
-- Compiled into shared libraries:
-  - `libbitcoinkernel.so` (Linux)
-  - `libbitcoinkernel.dylib` (macOS)
-  - `bitcoinkernel.dll` (Windows)
-
-> ⚠️ **Note:** You must compile Bitcoin Core to generate the native binary for your target operating system. This repository supports direct local builds for **macOS** as well as containerized builds via **Docker** to easily generate and extract the **Linux** shared library (`.so`).
+- Packages a macOS universal library and separate Linux x64 and ARM64 libraries.
+- Loads only the library matching the running OS and CPU. Other targets can provide an ABI-compatible path through `BITCOINKERNEL_LIB`.
 
 #### 2. FFI Layer (Koffi)
 - Loads native shared libraries
@@ -46,98 +42,52 @@ The system is composed of three main layers:
   - `BlockHeader`
 - Manages memory lifecycle (create, copy, dispose)
 
-## Installation Guide
+## Development
 
-### 1. Build Bitcoin Core Dependency
+Install [Node.js](https://nodejs.org/en), CMake 3.24 or newer, and a compiler toolchain. The Bitcoin Core source is an official Git submodule pinned to one exact commit. Initialize it, then install JavaScript dependencies and build the native library for the host:
 
-Before building this project, you must first build Bitcoin Core as a dependency.
-
-Go to:
-```
-depends/bitcoin/doc
-```
-Follow the instructions there to build Bitcoin Core for your operating system.
-
-This step ensures all platform-specific dependencies are correctly configured and will also include CMake, which is required in the next step for configuring and building Bitcoin Core and the main project.
-
-### 2. Configure the Project with CMake
-
-From the root of the project, run:
-
-```
-cmake -B build
-```
-What this command does
-cmake runs the CMake build system generator
--B build creates a `build/` directory and generates all build files inside it
-
-It simply prepares the project for compilation by generating platform-specific build files.
-
-### 3. Build the Project
-
-After configuration is complete, run:
-
-```
-cmake --build build -j 10
-```
-`cmake --build build` compiles the project inside the `build/` directory
-`-j 10` uses 10 CPU threads for parallel compilation
-
-**Why parallel build matters**
-
-Large C++ projects like Bitcoin Core contain many files. Parallel builds speed up compilation by processing multiple files at the same time.
-
-Example:
-`-j 1` slow (e.g one file at a time)
-`-j 10` faster (multiple files at once, depending on CPU capacity)
-
-### 4. Install NPM Dependencies
-
-Make sure you have [Node.js](https://nodejs.org/en) installed.
-
-Then run:
 ```bash
-npm install
-```
-### 5. Run Tests
-
-After building everything, run the test suite:
-```
-npm run test
-```
-This executes:
-
-```
-"test": "tsx ./tests/index.ts"
+git submodule update --init --recursive
+npm ci
+npm run native:build
+npm test
+npm run type-check
+npm run lint
+npm run build
+npm run docs:build
 ```
 
-### Docker Build Option (For Linux Shared Libraries)
-If you are on macOS but need to compile the .so binary for a Linux environment, you can use the included Dockerfile to build inside an isolated Ubuntu container. This method outputs the artifact right back into your host workspace via volume mounts.
+Tests use Node's built-in test runner with named cases, assertions, isolated temporary databases, and deterministic native-resource cleanup. The suite includes native integration tests for serialization, script verification, callbacks, regtest processing, reorganization, undo data, and disk reloads.
 
-1. Build the Docker Builder Image
-Ensure Docker Desktop is running on your machine, then run:
+See [reliability changes and ownership rules](docs/guide/reliability.md).
 
-```Bash
-docker build -t bitcoin-kernel-builder .
-```
-2. Compile via Containerized Volume Mount
-Run the compilation pipeline inside the container. We use an isolated build-linux folder so absolute build paths inside the container do not conflict with your local macOS host environment:
+### Docker Build Option (Linux Native Libraries)
 
-```Bash
-docker run --rm -v "$(pwd)":/workspace bitcoin-kernel-builder bash -c "
-    mkdir -p build-linux && \
-    cd build-linux && \
-    cmake .. && \
-    cmake --build .
-"
+On macOS, build Linux binaries in the included Ubuntu image. The build script writes the library and its checksum manifest into the architecture-specific package directory.
+
+```bash
+docker build --platform linux/amd64 -t js-bitcoinkernel-builder:ubuntu-24.04 .
+docker run --platform linux/amd64 --rm \
+  -v "$PWD":/workspace -w /workspace \
+  js-bitcoinkernel-builder:ubuntu-24.04 \
+  npm run native:build -- x64
 ```
 
-3. Locate Your Linux Binary
-Once the container finishes compiling, your Linux shared library will be available on your host machine at:
+The result is `src/js-kernel/binaries/linux-x64/libbitcoinkernel.so`. To build the Linux ARM64 variant on an ARM64 host, omit `--platform linux/amd64` and use `arm64` as the build argument. Run `npm run native:verify` after all three packaged targets are present.
 
-```Plaintext
-build-linux/bitcoin-build/src/kernel/libbitcoinkernel.so
+### Updating Bitcoin Core
+
+Choose and review an official Bitcoin Core commit, then move the submodule to that exact commit. Rebuild every packaged native target and commit the Gitlink, binaries, and manifests together:
+
+```bash
+git -C depend/bitcoin fetch origin <bitcoin-core-commit>
+git -C depend/bitcoin checkout --detach <bitcoin-core-commit>
+git add depend/bitcoin
+npm run native:build
+npm run native:verify
 ```
+
+Build macOS universal, Linux ARM64, and Linux x64 from their matching hosts or through the release workflow before committing the update. The binary manifests record the Bitcoin Core commit and `native:verify` rejects a binary built from a different or locally modified source tree.
 
 ## Installation & Usage
 You can integrate js-bitcoinkernel into your external projects using either the standard npm registry installation or a local link for development purposes.
@@ -150,7 +100,7 @@ npm install js-bitcoinkernel
 Then, import it into your TypeScript or JavaScript project:
 
 ```TypeScript
-import { BitcoinKernel } from 'js-bitcoinkernel';
+import { BlockHeader, Transaction } from 'js-bitcoinkernel';
 ```
 
 ### Method 2: Local Development & Linking (Alternative)
@@ -197,7 +147,6 @@ See the [documentation](https://musaharuna.github.io/js-bitcoinkernel/) for more
 ## References
 - [libbitcoinkernel](https://github.com/bitcoin/bitcoin/pull/30595)
 - [Bitcoin Core build documentation](https://github.com/bitcoin/bitcoin/blob/master/doc/build-unix.md)
-- [py-bitcoinkernel wrapper](https://github.com/stickies-v/py-bitcoinkernel)
 ## Contributing
 Contributions are welcome! Please feel free to submit issues and pull requests.
 

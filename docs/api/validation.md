@@ -15,7 +15,8 @@ import {
 
 const callbacks = new ValidationInterfaceCallbacks({
   block_connected(block: Block, entry: BlockTreeEntry) {
-    console.log(`connected ${entry.height} ${block.blockHash}`);
+    using hash = block.blockHash;
+    console.log(`connected ${entry.height} ${hash}`);
   },
 });
 
@@ -28,7 +29,7 @@ Purpose: converts high-level JavaScript callback functions into a native struct 
 
 | Constructor input | Returns | Errors and caveats |
 | --- | --- | --- |
-| Object with optional validation hooks. | Native-struct-like object. | Throws if an unknown callback key is supplied. Constructor returns a plain payload object rather than a normal class instance. |
+| Object with optional validation hooks. | `ValidationInterfaceCallbacks` instance. | Throws for unknown keys or non-function handlers. |
 
 Supported hooks:
 
@@ -44,21 +45,24 @@ Return values: callbacks return `void`; the constructor returns a struct-compati
 Errors:
 
 - Unknown keys throw immediately.
-- Native callback registration can fail if `koffi` is unavailable.
+- Native callback registration occurs when attaching to context options.
 - Callback code that throws may surface during native operations.
 
 Caveats:
 
-- Callback objects are anchored by `Context` and `ChainstateManager` to prevent garbage collection.
-- Block callback arguments may own native handles. Dispose objects you intentionally keep, but do not dispose borrowed `BlockTreeEntry` views.
-- The constructor behavior is unusual: `new ValidationInterfaceCallbacks(...)` returns the payload object used by native code.
+- Registrations remain active until the last native owner is destroyed, including context copies and managers. Creating an unattached callback object consumes no native callback slots.
+- Callbacks are synchronous. Their `block`, `state`, and `entry` arguments are valid during the callback only. The wrapper frees the transferred block and invalidates borrowed arguments on return, including when a handler throws.
+- To retain block or state data, call `copy()` inside the callback and later dispose the copy. A state can also be retained with `detach()`. A block is already owned, so `block.detach()` does not retain it beyond the callback; use `block.copy()`.
+- Entries cannot be copied. Store the height and hash bytes, then look up the entry again through a live manager.
+- A callback exception does not roll back native work already performed. Keep handlers short and handle application errors explicitly.
 
 ## Attach Callbacks Manually
 
 ```ts
 const callbacks = new ValidationInterfaceCallbacks({
   block_checked(block, state) {
-    console.log(block.blockHash.toString(), state.validationMode);
+    using hash = block.blockHash;
+    console.log(hash.toString(), state.validationMode);
   },
 });
 
@@ -79,4 +83,4 @@ const chainman = loadChainman(
 
 ## Direct-Module Exports
 
-`validation.ts` also exports the `ValidationCallbacks` TypeScript interface and `defaultValidationCallbacks`, but only `ValidationInterfaceCallbacks` is re-exported from the package root.
+`validation.ts` also exports the `ValidationCallbacks` TypeScript interface and `defaultValidationCallbacks`, and the package root re-exports `ValidationCallbacks` as a type alongside `ValidationInterfaceCallbacks`.

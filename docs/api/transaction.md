@@ -35,6 +35,29 @@ console.log(txid.toString());
 txid.dispose();
 ```
 
+## `Wtxid` and `WitnessStack`
+
+`Wtxid` has the same byte conversion, comparison, `copy()`, and `detach()` behaviour as `Txid`, but commits to witness data. For a non-witness transaction, its bytes equal its txid bytes; it remains a distinct wrapper type.
+
+`WitnessStack` is a borrowed, read-only sequence of raw `Uint8Array` witness items. It supports `length`, `get(index)`, negative indexes, `slice()`, iteration, `copy()`, and `detach()`. The stack is tied to its `TransactionInput` until detached or copied.
+
+```ts
+using input = tx.inputs.get(0);
+using witness = input.witnessStack.detach();
+for (const item of witness) console.log(item.length);
+```
+
+## `TxValidationState`
+
+`Transaction.check()` runs Bitcoin Core's context-free `CheckTransaction` rules and returns an owned state. It can report only `UNSET` for valid transactions or `CONSENSUS` for invalid ones today; the remaining `TxValidationResult` values are exported for future kernel entry points.
+
+```ts
+using state = tx.check();
+if (state.validationMode === ValidationMode.INVALID) {
+  console.log(state.txValidationResult);
+}
+```
+
 ## `TransactionOutPoint`
 
 Purpose: identifies the previous output spent by an input.
@@ -61,6 +84,8 @@ Purpose: wrapper for a transaction input.
 | --- | --- | --- | --- |
 | `outPoint` | None. | Borrowed `TransactionOutPoint`. | Tied to input lifetime. |
 | `sequence` | None. | 32-bit sequence number. | Used for RBF and relative locktime semantics. |
+| `scriptSig` | None. | Raw `Uint8Array`. | Serialized script bytes, without a CompactSize prefix. |
+| `witnessStack` | None. | Borrowed `WitnessStack`. | Tied to the input lifetime; detach or copy before retaining it. |
 | `toString()` | None. | Outpoint summary. | Diagnostic only. |
 | `copy()` | None. | Owned copy. | Throws if disposed. |
 
@@ -137,6 +162,10 @@ Purpose: wrapper for a full Bitcoin transaction.
 | `inputs` | None. | `TransactionInputSequence`. | Lazy native views. |
 | `outputs` | None. | `TransactionOutputSequence`. | Lazy native views. |
 | `txid` | None. | Borrowed `Txid` view. | Keep transaction alive or detach/copy txid. |
+| `wtxid` | None. | Borrowed `Wtxid` view. | Includes witness data; detach or copy before retaining it. |
+| `version` | None. | `number`. | Raw transaction version. |
+| `hasWitness` | None. | `boolean`. | Whether witness data is present. |
+| `check()` | None. | Owned `TxValidationState`. | Context-free structural checks only; it does not verify scripts or UTXO availability. |
 | `locktime` | None. | `number`. | Raw `nLockTime`. |
 | `toBytes()` | None. | Serialized transaction bytes. | Uses native byte writer. |
 | `toString()` | None. | Txid/input/output summary. | Diagnostic only. |
@@ -202,3 +231,9 @@ const undo = chainman.blockSpentOutputs.get(entry);
 const spent = undo.transactions.get(0);
 console.log(spent.coins.length);
 ```
+
+## Numeric inputs and sequence boundaries
+
+Amounts accept safe integer `number` values or signed 64-bit `bigint` values. Unsafe numbers, fractional values, and int64 overflow throw `RangeError` instead of being rounded or truncated by the FFI.
+
+All lazy sequences, including `CoinSequence`, support negative indices through `get()`. Indices must be safe integers; `NaN`, infinities, and fractions throw. `slice()` follows JavaScript array boundary conversion and clamping. Cached sequence lengths still check that the native owner is alive.
