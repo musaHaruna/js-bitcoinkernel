@@ -1,11 +1,9 @@
 import path from "node:path";
 /**
  * @module js-bitcoinkernel
- * @description Central public entry-point layout for the native Bitcoin kernel wrapper.
  *
- * This section acts as a consolidated top-level distribution hub, exporting data primitives,
- * validation mechanics, memory state boundaries, and exception layers.
- * packaging design to insulate consuming software layers from direct nested relative filepath imports.
+ * Public exports and helpers for creating contexts and chainstate managers.
+ * Returned native wrappers belong to the caller and must be disposed.
  */
 
 export {
@@ -84,25 +82,23 @@ import { ChainParameters, ChainstateManager, ChainstateManagerOptions, ChainType
 import { ValidationInterfaceCallbacks } from "./validation.js";
 
 /**
- * Automate the multi-step configuration sequence required to construct a valid `Context`.
+ * Create a context for a network with optional validation callbacks.
  *
- * This bootstrap function abstracts away the individual steps of setting up network parameters
- * and subscribing to subsystem notification callbacks. It encapsulates these configuration structures
- * within a transient builder before spawning an active engine execution workspace.
+ * The temporary parameters and options are disposed when this function
+ * returns or throws. The created native context retains what it needs,
+ * including ownership of its installed callback interfaces.
  *
- * @param chainType - The network parameter profile to provision (Mainnet, Testnet, Signet, or Regtest).
- * Defaults to {@link ChainType.REGTEST}.
- * @param validationCallbacks - Optional hook collection to intercept live consensus occurrences
- * (such as block connections, disconnections, or chain-tip updates).
- * @returns A fresh, **fully-owned** {@link Context} instance. The unmanaged container pointer remains
- * active until explicitly disposed of.
+ * @param chainType - Bitcoin network; defaults to regtest.
+ * @param validationCallbacks - Optional block validation event handlers.
+ * @returns An owned Context that the caller must dispose.
+ * @throws {Error} If configuration or native context creation fails.
  */
 export function makeContext(
   chainType: ChainType = ChainType.REGTEST,
   validationCallbacks?: ValidationInterfaceCallbacks | null
 ): Context {
-  const chainParams = new ChainParameters(chainType);
-  const opts = new ContextOptions();
+  using chainParams = new ChainParameters(chainType);
+  using opts = new ContextOptions();
   opts.set_chainparams(chainParams);
 
   if (validationCallbacks !== undefined && validationCallbacks !== null) {
@@ -113,37 +109,31 @@ export function makeContext(
 }
 
 /**
- * Load, allocate, and initialize an active `ChainstateManager` engine mapped to disk storage.
+ * Open a chainstate manager using the supplied data directory.
  *
- * This function orchestrates the complete initialization timeline of the kernel's data tier.
- * It resolves filesystem paths to absolute spatial coordinates, spawns the core native execution
- * context, sets database path criteria, and signals LevelDB/Flat-file engines to load existing
- * chain states or initialize an empty ledger track.
+ * Paths are resolved before calling the native API. Temporary context and
+ * options handles are disposed after setup; the manager retains the native
+ * resources it needs. Do not concurrently use the directory with bitcoind
+ * or another manager. Database locks can cause initialization to fail.
  *
- * > ### ⚠️ Data Directory Exclusivity Lock Requirement
- * > The underlying unmanaged database engine enforces an **exclusive write-lock** over the assigned
- * > data directory path. Concurrently sharing a data directory with a running `bitcoind` daemon or another
- * > active engine instance will result in immediate native initialization failures and database corruption.
- * > Shared directory operations are only viable if execution cycles alternate sequentially.
- *
- * @param datadir - The relative or absolute filesystem directory path where block indexing (`blocks/`)
- * and unspent output profiles (`chainstate/`) reside or will be initialized.
- * @param chainType - The network target validation parameters to enforce. Defaults to {@link ChainType.REGTEST}.
- * @param validationCallbacks - Optional hook collection passed to {@link makeContext} to monitor consensus operations.
- * @returns A fully operational, **fully-owned** {@link ChainstateManager} controller instance managing active blockchain verification loops.
+ * @param datadir - Directory for chainstate and the blocks subdirectory.
+ * @param chainType - Bitcoin network; defaults to regtest.
+ * @param validationCallbacks - Optional block validation event handlers.
+ * @returns An owned ChainstateManager that the caller must dispose.
+ * @throws {Error} If native configuration or manager creation fails.
  */
 export function loadChainman(
   datadir: string,
   chainType: ChainType = ChainType.REGTEST,
   validationCallbacks?: ValidationInterfaceCallbacks | null
 ): ChainstateManager {
-  // Standardize directory targets across different operating systems to prevent FFI string parsing errors
+  // Resolve the data directory before passing paths to the native API.
   const absoluteDataDir = path.resolve(datadir);
-  const context = makeContext(chainType, validationCallbacks);
+  using context = makeContext(chainType, validationCallbacks);
   const absoluteBlocksDir = path.join(absoluteDataDir, "blocks");
 
-  // Assemble the configuration rules mapping the newly targeted data pathways
-  const chainManOpts = new ChainstateManagerOptions(
+  // These temporary options are released after the manager is created.
+  using chainManOpts = new ChainstateManagerOptions(
     context,
     absoluteDataDir,
     absoluteBlocksDir

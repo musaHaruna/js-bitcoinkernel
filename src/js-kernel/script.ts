@@ -1,3 +1,5 @@
+import koffi from "koffi";
+import { int64, flagsWithin } from "./util/numbers.js";
 import {
   btck_script_pubkey_copy,
   btck_script_pubkey_create,
@@ -82,14 +84,11 @@ export class ScriptVerifyException extends KernelException {
 }
 
 /**
- * Reusable structure holding precomputed transaction hashing caches for script verification.
+ * Cache transaction data used during signature verification.
  *
- * This structure eliminates redundant SHA256 hashing calculations across multiple inputs
- * of the same transaction during parallel or sequential signature validation. By caching
- * intermediate sighash states (such as hashes of inputs, outputs, and amounts), it drops
- * verification complexity from a quadratic $O(N^2)$ scale down to linear $O(N)$ processing time.
- * * @note This precomputed cache is strictly required when verifying Taproot (BIP341) inputs,
- * where spending scripts mandate a comprehensive sighash digest over the complete set of spent outputs.
+ * Reusing the cache avoids repeating transaction hashing for each input.
+ * Supply the spent outputs in input order when Taproot verification needs
+ * all input amounts and scripts. Dispose the cache when finished.
  */
 export class PrecomputedTransactionData extends KernelOpaquePtr {
   protected static override destroyFn = btck_precomputed_transaction_data_destroy as (ptr: bigint) => void;
@@ -97,32 +96,46 @@ export class PrecomputedTransactionData extends KernelOpaquePtr {
   protected static override copyFn = btck_precomputed_transaction_data_copy as (ptr: bigint) => bigint;
 
   /**
-     * Create a precomputed transaction data cache instance for script verification.
-     *
-     * @param txTo - The transaction instance containing the input vector to precompute caches for.
-     * @param spentOutputs - An array of `TransactionOutput` structures matching the exact
-     * UTXOs being spent by this transaction. **Required** for Taproot verification; can be passed
-     * as `null` or an empty array if evaluating legacy or standard SegWit v0 inputs only.
-     * * @throws {Error} If `btck_precomputed_transaction_data_create` is unavailable, or if
-     * the native kernel fails to instantiate the cache and returns an invalid null pointer handle.
-     */
-  constructor(txTo: Transaction, spentOutputs: TransactionOutput[] | null = null) {
+   * Wrap an existing native precomputed-data pointer.
+   *
+   * @param ptr - Existing native cache pointer.
+   * @param ownsPtr - Whether this wrapper must destroy the cache handle.
+   * @param parent - Optional owner for a borrowed pointer.
+   */
+  constructor(ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null);
+  /**
+   * Create a cache for a transaction and its optional spent outputs.
+   *
+   * A nonempty output list must have one entry per transaction input,
+   * in the same order. Null or an empty list omits spent-output data;
+   * supply the full list for verification that requires it, such as Taproot.
+   *
+   * @param txTo - Transaction whose signatures will be verified.
+   * @param spentOutputs - Outputs being spent, in input order.
+   * @throws {RangeError} If a nonempty list has the wrong length.
+   * @throws {Error} If a handle is invalid or native creation fails.
+   */
+  constructor(txTo: Transaction, spentOutputs?: TransactionOutput[] | null);
+  constructor(txTo: Transaction | bigint, spentOutputs: TransactionOutput[] | boolean | null = null, parent: KernelOpaquePtr | null = null) {
+    if (typeof txTo === "bigint") {
+      super(txTo, typeof spentOutputs === "boolean" ? spentOutputs : true, parent);
+      return;
+    }
+    if (typeof spentOutputs === "boolean") throw new TypeError("Expected spent outputs array");
+    if (spentOutputs?.length && spentOutputs.length !== txTo.inputs.length) {
+      throw new RangeError("Spent outputs must match the transaction input count");
+    }
     if (!btck_precomputed_transaction_data_create) {
       throw new Error("btck_precomputed_transaction_data_create unavailable");
     }
 
-    let outputsPtr: BigUint64Array | null = null;
-    let outputsLen = 0n;
-
-    if (spentOutputs && spentOutputs.length > 0) {
-      outputsLen = BigInt(spentOutputs.length);
-      // Create a contiguous array of pointers (handles) for the native C side
-      outputsPtr = new BigUint64Array(spentOutputs.length);
-
-      for (let i = 0; i < spentOutputs.length; i++) {
-        // Accessing protected member across instances using the established 'as any' pattern
-        outputsPtr[i] = (spentOutputs[i] as any).getHandle();
-      }
+    let outputsPtr: Buffer | null = null;
+    const outputsLen = spentOutputs?.length ?? 0;
+    if (spentOutputs && outputsLen > 0) {
+      // Encode contiguous native-width addresses for the C pointer-array argument.
+      const handles = spentOutputs.map(output => (output as any).getHandle());
+      outputsPtr = Buffer.alloc(koffi.sizeof('void *') * outputsLen);
+      koffi.encode(outputsPtr, koffi.array('uintptr_t', outputsLen), handles);
     }
 
     // Bypassing protected barrier on sibling class 'Transaction' using 'as any'
@@ -130,11 +143,11 @@ export class PrecomputedTransactionData extends KernelOpaquePtr {
 
     const ptr = btck_precomputed_transaction_data_create(
       txHandle,
-      outputsPtr, // Koffi treats BigUint64Array as T** (pointer to pointers)
+      outputsPtr,
       outputsLen
     ) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to create native PrecomputedTransactionData");
     }
 
@@ -152,11 +165,11 @@ export class PrecomputedTransactionData extends KernelOpaquePtr {
 }
 
 /**
- * A Bitcoin script defining spending conditions for a transaction output (scriptPubKey).
+ * Wrapper for the spending conditions of a transaction output.
  *
- * This wrapper encapsulates an opaque pointer to a compiled or raw native Bitcoin script.
- * It contains the explicit consensus validation logic required to locked funds, which
- * must be evaluated alongside a spending transaction input's witness or signature script.
+ * Construct a script from bytes or wrap an existing native pointer.
+ * verify() checks a spending input against this script using the native
+ * interpreter. Dispose owned script wrappers when finished.
  */
 export class ScriptPubkey extends KernelOpaquePtr {
   protected static override destroyFn = btck_script_pubkey_destroy as (ptr: bigint) => void;
@@ -189,7 +202,7 @@ export class ScriptPubkey extends KernelOpaquePtr {
         throw new Error("btck_script_pubkey_create unavailable");
       }
       const ptr = btck_script_pubkey_create(arg1, BigInt(arg1.length)) as bigint;
-      if (ptr === 0n) {
+      if (!ptr) {
         throw new Error("Failed to create native ScriptPubkey");
       }
       super(ptr, true, null);
@@ -238,20 +251,22 @@ export class ScriptPubkey extends KernelOpaquePtr {
   }
 
   /**
-     * Verify that a spending transaction input correctly satisfies this script public key.
-     *
-     * Executes the native Bitcoin consensus script interpreter execution loop to validate signatures,
-     * multi-sigs, timelocks, and smart contracts relative to the spending transaction framework.
-     *
-     * @param amount - The value of the UTXO being spent, denominated in satoshis (critical for SegWit validation).
-     * @param txTo - The spending transaction instance containing the input execution context.
-     * @param precomputedTxdata - Optional precomputed transaction hashing data cache (BIP143/BIP341 optimization).
-     * @param inputIndex - The zero-based index of the transaction input under verification.
-     * @param flags - Consensus and structural rule verification flags to pass to the engine loop.
-     * @returns True if the script evaluates successfully and spending conditions are validated.
-     * @throws {Error} If `btck_script_pubkey_verify` is unavailable.
-     * @throws {ScriptVerifyException} If verification fails or flags trigger an evaluation abort.
-     */
+   * Verify a transaction input against this output script.
+   *
+   * The amount is in satoshis and must be an exact signed 64-bit integer.
+   * The input index must identify an existing input, and flags may contain
+   * only supported bits. These checks run before native verification.
+   *
+   * @param amount - Amount of the output being spent.
+   * @param txTo - Spending transaction.
+   * @param precomputedTxdata - Optional cache prepared for this transaction.
+   * @param inputIndex - Zero-based input index.
+   * @param flags - Script verification rules to enable.
+   * @returns True if verification succeeds; false for script failure with OK status.
+   * @throws {RangeError} If the amount, index, or flag bits are invalid.
+   * @throws {ScriptVerifyException} If native verification reports a non-OK error status.
+   * @throws {Error} If a required binding is unavailable or a handle is invalid.
+   */
   verify(
     amount: bigint | number,
     txTo: Transaction,
@@ -263,6 +278,12 @@ export class ScriptPubkey extends KernelOpaquePtr {
       throw new Error("btck_script_pubkey_verify unavailable");
     }
 
+    if (!Number.isSafeInteger(inputIndex) || inputIndex < 0 || inputIndex >= txTo.inputs.length) {
+      throw new RangeError("Input index out of range");
+    }
+
+    flagsWithin(flags, ScriptVerificationFlags.ALL);
+
     // Allocate a 1-byte buffer to retrieve the uint8 status code back from the C-API pointer
     const kStatusOut = new Uint8Array(1);
 
@@ -272,7 +293,7 @@ export class ScriptPubkey extends KernelOpaquePtr {
 
     const successInt = btck_script_pubkey_verify(
       this.getHandle(),
-      BigInt(amount),
+      int64(amount),
       txHandle,
       precomputedHandle,
       inputIndex,

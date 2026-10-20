@@ -1,9 +1,8 @@
 /**
- * Base class for all runtime exceptions emitted by the kernel wrapper library.
+ * Base class for the wrapper's kernel-specific exceptions.
  *
- * Serves as the foundational error type for all native Bitcoin kernel wrapper exceptions.
- * By routing all library-specific failures through this base class, consuming applications can
- * implement unified error-handling strategies using a single `instanceof KernelException` sweep.
+ * The error name follows the constructed subclass. Argument and lifetime
+ * checks may instead throw standard TypeError, RangeError, or Error values.
  */
 export class KernelException extends Error {
   /**
@@ -14,19 +13,16 @@ export class KernelException extends Error {
   constructor(message?: string) {
     super(message);
 
-    // Restore correct prototype chain alignment for custom Error sub-classes
-    // to ensure proper behavior in V8/JavaScript execution environments.
-    Object.setPrototypeOf(this, KernelException.prototype);
+    // Preserve the concrete subclass name in error output.
+    this.name = new.target.name;
   }
 }
 
 /**
- * Exception raised when the `ChainstateManager` encounters an error while processing or validating a full block.
+ * Report a failed native block-processing operation.
  *
- * This exception signifies that a block failed full consensus verification. Common triggers include:
- * * Missing or double-spent parent outpoints in the current UTXO snapshot context.
- * * Broken scripts or invalid cryptographic transaction signatures.
- * * Hard structural violations of block size, subsidy allocations, or Merkle root matching rules.
+ * The code preserves the native operation status. It is not a complete
+ * consensus rejection reason by itself.
  */
 export class ProcessBlockException extends KernelException {
   /** * The explicit status error code returned directly by the underlying native C API.
@@ -50,12 +46,10 @@ export class ProcessBlockException extends KernelException {
 }
 
 /**
- * Exception raised when the `ChainstateManager` encounters an error while processing or validating an isolated block header.
+ * Report a failed native block-header processing operation.
  *
- * This exception typically indicates a failure during early network parsing and header tracking. Common triggers include:
- * * Insufficient Proof-of-Work (PoW) meeting the network's active target difficulty requirements.
- * * A block timestamp that drifts too far into the future relative to median-time-past calculations.
- * * Chaining mismatches, where the `hashPrevBlock` parameter links to an unrecognized or invalid historical parent block header.
+ * The code preserves the native operation status. Consult the validation
+ * state, where available, for details about a rejected header.
  */
 export class ProcessBlockHeaderException extends KernelException {
   /** * The explicit status error code returned directly by the underlying native C API.

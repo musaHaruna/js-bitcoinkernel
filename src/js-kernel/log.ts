@@ -1,3 +1,5 @@
+import koffi from "koffi";
+import { decodeText } from "./util/callbacks.js";
 import {
   btck_logging_set_options,
   btck_logging_set_level_category,
@@ -119,32 +121,37 @@ export class LoggingOptions {
   }
 
   /**
-     * Marshal properties into an unmanaged structural layout compliant with the FFI layer.
-     *
-     * @returns A plain configuration object matching the target C layout definition.
-     */
+   * Convert logging options to the native struct fields.
+   *
+   * Boolean options are represented as numeric 0 or 1 for the C API.
+   *
+   * @returns The native logging configuration payload.
+   */
   public toNativeStruct() {
     return {
-      log_timestamps: this.log_timestamps,
-      log_time_micros: this.log_time_micros,
-      log_threadnames: this.log_threadnames,
-      log_sourcelocations: this.log_sourcelocations,
-      always_print_category_levels: this.always_print_category_levels
+      log_timestamps: Number(this.log_timestamps),
+      log_time_micros: Number(this.log_time_micros),
+      log_threadnames: Number(this.log_threadnames),
+      log_sourcelocations: Number(this.log_sourcelocations),
+      always_print_category_levels: Number(this.always_print_category_levels)
     };
   }
 }
 
 /**
- * Validate that an object satisfies single-argument function callback constraints.
+ * Check whether the supplied value is a function.
  *
- * @param fn - The candidate reference testing for compatibility.
- * @returns True if the parameter behaves as a single-argument functional router.
+ * Default and rest parameters can make function.length zero even when
+ * the handler accepts a message, so declared arity is not checked.
+ *
+ * @param fn - Candidate logging handler.
+ * @returns True if the value is callable as a JavaScript function.
  */
 export function is_valid_log_callback(fn: unknown): boolean {
   if (typeof fn !== "function") {
     return false;
   }
-  return fn.length === 1;
+  return true;
 }
 
 /**
@@ -160,6 +167,12 @@ export function logging_set_options(options: LoggingOptions): void {
   btck_logging_set_options(options.toNativeStruct());
 }
 
+function validateCategory(category: LogCategory): void {
+  if (!Number.isInteger(category) || category < LogCategory.ALL || category > LogCategory.KERNEL) {
+    throw new RangeError("Invalid log category");
+  }
+}
+
 /**
  * Set the minimum active message severity threshold for a target logging category.
  *
@@ -172,7 +185,10 @@ export function logging_set_options(options: LoggingOptions): void {
  * @param level - The chosen severity threshold to implement.
  * @throws {Error} If `btck_logging_set_level_category` function bindings are missing.
  */
+
 export function set_log_level_category(category: LogCategory, level: LogLevel): void {
+  validateCategory(category);
+  if (level !== LogLevel.DEBUG && level !== LogLevel.INFO) throw new RangeError("Invalid log level");
   if (!btck_logging_set_level_category) {
     throw new Error("btck_logging_set_level_category unavailable");
   }
@@ -189,6 +205,7 @@ export function set_log_level_category(category: LogCategory, level: LogLevel): 
  * @throws {Error} If `btck_logging_enable_category` function bindings are missing.
  */
 export function enable_log_category(category: LogCategory): void {
+  validateCategory(category);
   if (!btck_logging_enable_category) {
     throw new Error("btck_logging_enable_category unavailable");
   }
@@ -205,6 +222,7 @@ export function enable_log_category(category: LogCategory): void {
  * @throws {Error} If `btck_logging_disable_category` function bindings are missing.
  */
 export function disable_log_category(category: LogCategory): void {
+  validateCategory(category);
   if (!btck_logging_disable_category) {
     throw new Error("btck_logging_disable_category unavailable");
   }
@@ -212,33 +230,35 @@ export function disable_log_category(category: LogCategory): void {
 }
 
 /**
- * Active context manager linking native log string streams to JavaScript callbacks.
+ * Receive native kernel log messages through a JavaScript handler.
  *
- * Instantiates a direct callback pipe intercepting text lines formatted by the kernel.
- * * @note Early startup events occurring prior to initial connection setups are held within an
- * internal 1MB buffer and flushed immediately across the boundary upon connection activation.
+ * A persistent Koffi callback stays registered until the connection is
+ * closed. Dispose this wrapper, or use a using declaration, when finished.
+ * Native logging settings apply across the process.
  */
 export class LoggingConnection extends KernelOpaquePtr {
   protected static override createFn = btck_logging_connection_create as (...args: unknown[]) => bigint;
   protected static override destroyFn = btck_logging_connection_destroy as (ptr: bigint) => void;
 
-  /** * Retained reference to the native callback wrapper function.
-     * Crucial to anchor this reference here to prevent the V8 Garbage Collector from
-     * sweeping the callback stub while unmanaged C loops still hold its function pointer.
-     */
-  private _nativeCallback: Function;
+  /**
+   * Registered Koffi callback handle, released after the native connection closes.
+   */
+  private _nativeCallback: bigint | null;
 
   /**
-     * Create a new connection instance listening to the kernel logging stream.
-     *
-     * @param cb - Single-argument callback receiving raw unmanaged string buffers.
-     * @throws {TypeError} If the provided callback function does not take exactly one parameter.
-     * @throws {Error} If `btck_logging_connection_create` function bindings are missing or handle initialization fails.
-     */
+   * Create a native logging connection with a persistent callback.
+   *
+   * Messages are decoded as UTF-8 using their native byte lengths.
+   * If connection creation fails, the callback registration is released.
+   *
+   * @param cb - Handler receiving a decoded JavaScript string.
+   * @throws {TypeError} If cb is not a function.
+   * @throws {Error} If registration or native connection creation fails.
+   */
   constructor(cb: (message: string) => void) {
     if (!is_valid_log_callback(cb)) {
       throw new TypeError(
-        "Log callback must be a function with 1 parameter and no return value."
+        "Log callback must be a function."
       );
     }
 
@@ -246,51 +266,67 @@ export class LoggingConnection extends KernelOpaquePtr {
       throw new Error("btck_logging_connection_create unavailable");
     }
 
-    // 1. Wrap the JS function and store it in a local variable (Safe from 'this' constraints)
-    const nativeCb = LoggingConnection._wrap_log_fn(cb);
+    // Register the callback before creating the connection that will use it.
+    const nativeCb = koffi.register(LoggingConnection._wrap_log_fn(cb), "btck_LogCallback *");
 
-    // 2. Invoke the native FFI creator function
-    const newPtr = btck_logging_connection_create(nativeCb, null, null) as bigint;
+    // Release the registration if native connection creation fails.
+    let newPtr: bigint;
+    try {
+      newPtr = btck_logging_connection_create(nativeCb, null, null) as bigint;
+    } catch (error) {
+      koffi.unregister(nativeCb);
+      throw error;
+    }
 
-    if (newPtr === 0n) {
+    if (!newPtr) {
+      koffi.unregister(nativeCb);
       throw new Error("Failed to create LoggingConnection");
     }
 
-    // 3. Construct the base class first to bind the unmanaged pointer handle
+    // Take ownership of the native connection.
     super(newPtr, true, null);
 
-    // 4. Anchor the callback stub instance safely to protect it from V8 GC sweeps
+    // Save the registration handle for disposal.
     this._nativeCallback = nativeCb;
   }
 
   /**
-     * Wrap a standard JavaScript functional closure inside an FFI-compliant callback signature.
-     * Maps structurally to: `void (*btck_LogCallback)(void* user_data, const char* message, size_t message_len)`
-     *
-     * @param fn - The high-level consumer handler receiving string payloads.
-     * @returns An FFI-compliant trampoline function capable of decoding unmanaged string pointer segments.
-     */
+   * Close the native connection before unregistering its callback.
+   *
+   * Repeated disposal does nothing. The callback handle is cleared
+   * after cleanup so it cannot be unregistered twice.
+   */
+  override dispose(): void {
+    if (this.isDisposed()) return;
+    try {
+      super.dispose();
+    } finally {
+      if (this._nativeCallback) koffi.unregister(this._nativeCallback);
+      this._nativeCallback = null;
+    }
+  }
+
+  /**
+   * Adapt the native log callback to a string handler.
+   *
+   * The native signature supplies user_data, a message pointer, and a byte
+   * length. Ignore user_data and read exactly that span, including NUL bytes.
+   *
+   * @param fn - Handler receiving decoded text.
+   * @returns A wrapper with the native callback argument order.
+   */
   private static _wrap_log_fn(fn: (message: string) => void): Function {
     return (userData: unknown, messagePtr: unknown, messageLen: number | bigint): void => {
-      const length = Number(messageLen);
-
-      let decodedString = "";
-      if (messagePtr) {
-        // Instantly construct a safe local memory copy from the raw unmanaged character pointer address
-        const bufferView = Buffer.from(messagePtr as any, 0, length);
-        decodedString = bufferView.toString("utf-8");
-      }
-
-      fn(decodedString);
+      fn(decodeText(messagePtr, messageLen));
     };
   }
 }
 
 /**
- * Coordination manager bridging native kernel log events to application consumers.
+ * Configure native logging and forward messages to a console logger.
  *
- * Configures output formatting styles, initializes categories, registers baseline levels,
- * and anchors the active `LoggingConnection` pipe to ensure robust message routing.
+ * The connection is available as conn; dispose it when logging is no
+ * longer needed. Category and formatting settings are process-wide.
  */
 export class KernelLogViewer {
   /** * The root contextual namespace descriptor tag prefixing console statements. */
@@ -299,6 +335,7 @@ export class KernelLogViewer {
   public categories: LogCategory[];
   /** * The underlying connection pipeline forwarding unmanaged events. */
   public conn: LoggingConnection;
+  private temporaryCategoryCounts = new Map<LogCategory, number>();
 
   /**
      * Instantiates a diagnostic monitoring manager over active kernel operations.
@@ -338,23 +375,36 @@ export class KernelLogViewer {
   }
 
   /**
-     * Temporarily open structural categories for an isolated execution scope.
-     *
-     * Toggles categories on, runs the provided callback block, and cleanly restores previous states
-     * within a `try...finally` block to protect against diagnostic pollution or memory leaks.
-     *
-     * @param categories - Array of categories to temporarily open.
-     * @param work - Async functional task context block to process.
-     */
+   * Enable categories while the supplied asynchronous work runs.
+   *
+   * Nested or overlapping scopes on this viewer are counted. A category
+   * is disabled when its last temporary scope ends unless it is listed in
+   * this viewer's permanent categories. Cleanup also runs when work rejects.
+   *
+   * Counts belong to this viewer; they do not track changes made by other
+   * viewers or direct calls to the process-wide logging functions.
+   *
+   * @param categories - Categories to enable during the operation.
+   * @param work - Asynchronous operation to await.
+   * @throws {RangeError} If a category is invalid. Errors from work propagate.
+   */
   public async temporaryCategories(categories: LogCategory[], work: () => Promise<void>): Promise<void> {
-    for (const cat of categories) enable_log_category(cat);
+    for (const cat of categories) validateCategory(cat);
+    for (const cat of categories) {
+      enable_log_category(cat);
+      this.temporaryCategoryCounts.set(cat, (this.temporaryCategoryCounts.get(cat) ?? 0) + 1);
+    }
 
     try {
       await work();
     } finally {
       for (const cat of categories) {
-        if (!this.categories.includes(cat)) {
-          disable_log_category(cat);
+        const remaining = this.temporaryCategoryCounts.get(cat)! - 1;
+        if (remaining === 0) {
+          this.temporaryCategoryCounts.delete(cat);
+          if (!this.categories.includes(cat)) disable_log_category(cat);
+        } else {
+          this.temporaryCategoryCounts.set(cat, remaining);
         }
       }
     }
@@ -428,7 +478,7 @@ export interface KernelLogRecord {
  */
 export function parse_btck_log_string(loggerName: string, logString: string): KernelLogRecord {
   // Regex matching the kernel log format: timestamp [thread] [function] [category:level] message
-  const pattern = /^([\d-]+T[\d:]+Z)\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[(.+)\]\s+\[([^:]+):([^\]]+)\]\s+(.+)$/;
+  const pattern = /^([\d-]+T[\d:]+(?:\.\d+)?Z)\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[(.+)\]\s+\[([^:]+):([^\]]+)\]\s+(.+)$/;
 
   const match = logString.match(pattern);
   if (!match) {

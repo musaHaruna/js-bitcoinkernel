@@ -1,50 +1,39 @@
 /**
- * An abstract lazy sequence that fetches items on-demand from a backing data source.
+ * Read-only sequence that fetches items when requested.
  *
- * Implements a read-only, array-like interface designed for efficient access to large
- * collections exposed by native C kernels. Instead of eagerly marshaling an entire dataset
- * across the FFI boundary into JavaScript memory, the sequence length is queried lazily,
- * and individual elements are allocated and pulled *only* upon explicit index evaluation.
+ * Subclasses provide length and getItem(). Iteration fetches one item
+ * at a time; slice() fetches its selected items into an ordinary array.
+ * Returned native wrappers retain the ownership rules of the subclass.
  *
- * Subclasses must override and implement:
- * - `get length()`: Return the total element count.
- * - `getItem(index)`: Retrieve a single element at a normalized, non-negative position.
- *
- * @template T - The type of elements contained within the sequence.
+ * @template T - Type of each item.
  */
 export abstract class LazySequence<T> implements Iterable<T> {
   /**
-     * Return the total number of elements in the sequence.
-     *
-     * * @note This getter must be overridden by concrete subclasses. Consider caching
-     * the length internally if querying it via the native C API introduces significant
-     * cross-boundary overhead.
-     * * @returns The element count as a standard JavaScript integer.
-     */
+   * Return the current number of items in the backing collection.
+   */
   abstract get length(): number;
 
   /**
-     * Lower-level hook to fetch an item at a specific normalized position.
-     *
-     * This method must be implemented by concrete subclasses to resolve data
-     * extraction from the native layer.
-     *
-     * @param index - A guaranteed non-negative index (already normalized from negative inputs).
-     * @returns The hydrated item at the specified position.
-     */
+   * Fetch one item at a normalized index.
+   *
+   * @param index - Non-negative index within the collection bounds.
+   * @returns The item provided by the subclass.
+   */
   protected abstract getItem(index: number): T;
 
   /**
-     * Retrieve an item at a specific integer index, supporting negative indexing.
-     *
-     * This method maps negative integer arguments to offset back from the end of the
-     * sequence (e.g., `-1` targets the final element, mimicking Python-style sequences).
-     *
-     * @param index - The positional integer index to look up.
-     * @returns The requested element.
-     * @throws {RangeError} If the resolved index falls outside the range `[0, length)`.
-     */
+   * Fetch an item using a safe integer index.
+   *
+   * Negative indexes count from the end: -1 selects the last item.
+   * Fractions, NaN, infinities, and unsafe integers are rejected before
+   * calling the underlying item accessor.
+   *
+   * @param index - Item index, optionally negative.
+   * @returns The requested item.
+   * @throws {RangeError} If the index is not a safe integer or is out of bounds.
+   */
   public get(index: number): T {
+    if (!Number.isSafeInteger(index)) throw new RangeError("Sequence index must be a safe integer");
     const len = this.length;
 
     if (index < 0) {
@@ -59,22 +48,21 @@ export abstract class LazySequence<T> implements Iterable<T> {
   }
 
   /**
-     * Extract a shallow-copied section of the sequence into a new JavaScript Array.
-     *
-     * Behavioral semantics mirror standard `Array.prototype.slice`, cleanly handling
-     * missing, out-of-bounds, or negative boundary markers.
-     *
-     * @param start - Optional zero-based index at which to begin extraction (inclusive).
-     * If omitted, defaults to `0`.
-     * @param end - Optional zero-based index before which to end extraction (exclusive).
-     * If omitted, defaults to the sequence length.
-     * @returns A fresh JavaScript array containing the pulled and hydrated sequence elements.
-     */
+   * Fetch a range into a new array using Array.slice numeric bounds.
+   *
+   * Fractions truncate toward zero, NaN becomes zero, and bounds are clamped
+   * to the collection length. Negative bounds count from the end. No native
+   * objects are deep-copied by this method.
+   *
+   * @param start - Inclusive start; defaults to zero.
+   * @param end - Exclusive end; defaults to the collection length.
+   * @returns The selected items, fetched immediately.
+   */
   public slice(start?: number, end?: number): T[] {
     const len = this.length;
 
     // Normalize start index
-    let kStart = start === undefined ? 0 : start;
+    let kStart = start === undefined || Number.isNaN(start) ? 0 : Math.trunc(start);
     if (kStart < 0) {
       kStart = Math.max(len + kStart, 0);
     } else {
@@ -82,7 +70,7 @@ export abstract class LazySequence<T> implements Iterable<T> {
     }
 
     // Normalize end index
-    let kEnd = end === undefined ? len : end;
+    let kEnd = end === undefined ? len : Number.isNaN(end) ? 0 : Math.trunc(end);
     if (kEnd < 0) {
       kEnd = Math.max(len + kEnd, 0);
     } else {

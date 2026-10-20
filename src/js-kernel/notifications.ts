@@ -1,36 +1,39 @@
-import { ChainType } from './chain.js';
-import { initializeCallbacks } from './util/callbacks.js';
+/** Synchronization state, distinct from the selected Bitcoin network. */
+export enum SynchronizationState { INIT_REINDEX = 0, INIT_DOWNLOAD = 1, POST_INIT = 2 }
+import { initializeCallbacks, decodeText } from './util/callbacks.js';
 
 /**
- * Strongly-typed definitions for domain-level notification callbacks.
- * * These signatures match the clean, user-facing interface where the native
- * C-layer `user_data` context pointer has been stripped away by the utility layer.
+ * Optional handlers for kernel notifications.
+ *
+ * Handlers receive decoded text and no native user_data argument.
+ * Message lengths remain native UTF-8 byte counts, not character counts.
+ * SynchronizationState describes sync progress, not the chosen network.
  */
 export interface NotificationCallbackOptions {
   /**
      * Triggered when the best block chain tip changes.
      *
-     * @param state - The underlying chain state or identifier.
+     * @param state - The current synchronization stage.
      * @param index - The block index identifier or pointer.
      * @param verificationProgress - Synchronization progress normalized as a float between 0.0 and 1.0.
      */
-  block_tip?: (state: ChainType, index: unknown, verificationProgress: number) => void;
+  block_tip?: (state: SynchronizationState, index: unknown, verificationProgress: number) => void;
 
   /**
      * Triggered when a block header synchronization milestone is reached.
      *
-     * @param state - The underlying chain state or identifier.
+     * @param state - The current synchronization stage.
      * @param height - The block height of the current header tip.
-     * @param timestamp - The block header timestamp (UNIX epoch).
+     * @param timestamp - The block header timestamp in Unix seconds.
      * @param presync - A numeric flag or progress state representing pre-synchronization status.
      */
-  header_tip?: (state: ChainType, height: bigint, timestamp: bigint, presync: number) => void;
+  header_tip?: (state: SynchronizationState, height: number | bigint, timestamp: number | bigint, presync: number) => void;
 
   /**
      * Triggered during long-running operations to communicate structural progress.
      *
      * @param title - The label or description of the current task (e.g., "Initial Block Download").
-     * @param titleLen - The byte or character length of the title string.
+     * @param titleLen - The UTF-8 byte length of the title.
      * @param progressPercent - Percentage completion represented as an integer or float.
      * @param resumePossible - A flag indicating whether the operational state can be safely resumed if interrupted.
      */
@@ -70,8 +73,7 @@ export interface NotificationCallbackOptions {
 }
 
 /**
- * The precise collection of permitted notification field keys matching the expected native layout.
- * Used to enforce strict structural boundaries during callback orchestration.
+ * Supported notification names used to reject unknown callback fields.
  */
 const NOTIFICATION_FIELDS = new Set([
   "block_tip",
@@ -84,25 +86,22 @@ const NOTIFICATION_FIELDS = new Set([
 ]);
 
 /**
- * Wrapper for receiving kernel notification events.
+ * Prepare notification handlers for registration by ContextOptions.
  *
- * This class orchestrates incoming user-defined event hooks, processes them through
- * the wrapper utility to discard native context pointers, and formats them into a
- * plain layout compatible with FFI mapping layers (such as Koffi).
- * * All hooks are optional; omitted notifications are cleanly ignored by the kernel.
+ * Native text pointers are decoded using their explicit byte lengths.
+ * The user_data argument is removed before invoking user handlers.
+ * Omitted callbacks are null fields. This class prepares the functions;
+ * ContextOptions registers their persistent native callback pointers.
  */
 export class NotificationInterfaceCallbacks {
   /**
-     * Internal registry keeping functional closures alive.
-     * This prevents the V8 garbage collection mechanism from sweeping away active event loops
-     * while they are cross-referenced across the native execution boundary.
-     */
+   * Keep prepared JavaScript callback wrappers reachable.
+   */
   private _gcAnchors: Record<string, (...args: any[]) => any>;
 
   /**
-     * The plain native structure object populated with safe callback handlers.
-     * Configured for direct ingestion by your Koffi binding layer.
-     */
+   * Prepared callback fields consumed by ContextOptions during registration.
+   */
   public nativeStruct: Record<string, any>;
 
   /**
@@ -115,15 +114,20 @@ export class NotificationInterfaceCallbacks {
     // Delegate structural checking, user_data stripping, and memory anchoring to the utility
     const { payload, gcAnchors } = initializeCallbacks(NOTIFICATION_FIELDS, callbacks);
 
+    // C strings are length-delimited and need not be NUL-terminated.
+    for (const name of ['progress', 'flush_error', 'fatal_error']) {
+      const fn = payload[name];
+      if (fn) payload[name] = (ud: unknown, ptr: unknown, len: number | bigint, ...rest: unknown[]) => fn(ud, decodeText(ptr, len), len, ...rest);
+    }
+    const warning = payload.warning_set;
+    if (warning) payload.warning_set = (ud: unknown, code: number, ptr: unknown, len: number | bigint) => warning(ud, code, decodeText(ptr, len), len);
     this.nativeStruct = payload;
     this._gcAnchors = gcAnchors;
   }
 }
 
 /**
- * Type-Safe Default Diagnostics Instance.
- * * Provides an out-of-the-box diagnostic suite that pipes active event notifications
- * directly to standard system logs (`console.log`), replicating default runtime behaviors.
+ * Optional handlers that print kernel notifications to the console.
  */
 export const defaultNotificationCallbacks = new NotificationInterfaceCallbacks({
   block_tip: (state, index, verificationProgress) => {

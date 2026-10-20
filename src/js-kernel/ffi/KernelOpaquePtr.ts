@@ -10,15 +10,15 @@ export type KernelOpaquePtrConstructor<T extends KernelOpaquePtr> = {
 };
 
 /**
- * Base class for opaque native pointer wrappers.
+ * Base class for wrappers around native Bitcoin Kernel pointers.
  *
- * Manages the lifecycle of opaque pointers returned from a native Bitcoin kernel (C) layer.
- * It handles pointer ownership, deep duplication, view referencing, and automated or explicit disposal.
+ * An owned wrapper must release its native handle. A borrowed wrapper
+ * must not free the memory it references. When a parent is supplied,
+ * access is rejected after that parent is disposed or changes its pointer.
  *
- * Subclasses are expected to bind native functions:
- * - `createFn`: allocate native resource
- * - `destroyFn`: free native resource
- * - `copyFn`: duplicate native resource
+ * Subclasses provide createFn, destroyFn, and copyFn where supported.
+ * Native copy semantics depend on the type: some copies share resources.
+ * Call dispose(), or use a using declaration, to release owned handles.
  */
 export abstract class KernelOpaquePtr {
   /** Native pointer handle. Nullified once disposed. */
@@ -29,19 +29,24 @@ export abstract class KernelOpaquePtr {
 
   /** Optional parent object to keep the parent ownership chain alive in memory. */
   protected parent: KernelOpaquePtr | null;
+  /** Parent pointer captured at creation, used to detect replaced native storage. */
+  private parentHandle: bigint | null;
 
   protected static createFn?: (...args: any[]) => bigint;
   protected static destroyFn?: (ptr: bigint) => void;
   protected static copyFn?: (ptr: bigint) => bigint;
 
   /**
-     * Initialize the native pointer wrapper.
-     *
-     * @param ptr - Native pointer value.
-     * @param ownsPtr - Whether this instance owns the pointer. Defaults to true.
-     * @param parent - Optional parent owner to prevent premature garbage collection or freeing. Defaults to null.
-     * @throws {Error} If the provided pointer is null or evaluation evaluates to 0n.
-     */
+   * Wrap a native pointer and record its ownership.
+   *
+   * Keeping a parent reference does not prevent explicit parent disposal.
+   * The saved parent handle lets borrowed views detect that invalidation.
+   *
+   * @param ptr - Non-null native pointer.
+   * @param ownsPtr - Whether this wrapper must destroy the handle.
+   * @param parent - Optional owner of borrowed memory.
+   * @throws {Error} If the pointer is null or the supplied parent is invalid.
+   */
   protected constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
     if (!ptr) {
       throw new Error("Pointer cannot be null");
@@ -50,6 +55,7 @@ export abstract class KernelOpaquePtr {
     this.ptr = ptr;
     this.ownsPtr = ownsPtr;
     this.parent = parent;
+    this.parentHandle = parent ? parent.getHandle() : null;
   }
 
   /**
@@ -67,7 +73,7 @@ export abstract class KernelOpaquePtr {
 
     const ptr = this.createFn(...args);
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to create ${this.name}`);
     }
 
@@ -85,46 +91,56 @@ export abstract class KernelOpaquePtr {
   }
 
   /**
-     * Wrap an existing native pointer as a non-owning view.
-     * * Useful when referencing memory managed or owned elsewhere in the system.
-     *
-     * @param ptr - The native pointer handle to wrap.
-     * @param parent - Optional parent object that actually owns the underlying memory space.
-     * @returns A new non-owning view instance of the subclass.
-     */
+   * Wrap a native pointer without taking ownership of its memory.
+   *
+   * Supply the owner as parent so later access can check its lifetime.
+   * Without a parent, the caller must ensure the native memory stays valid.
+   *
+   * @param ptr - Native pointer to borrow.
+   * @param parent - Optional owner used for lifetime checks.
+   * @returns A borrowed wrapper that does not destroy the native object.
+   */
   static fromView<T extends KernelOpaquePtr>(this: new (ptr: bigint, ownsPtr?: boolean, parent?: KernelOpaquePtr | null) => T, ptr: bigint, parent: KernelOpaquePtr | null = null): T {
     return new this(ptr, false, parent);
   }
 
   /**
-     * Free native resources if this instance owns the pointer.
-     * * Clears internal pointer handles and references to prevent use-after-free scenarios.
-     *
-     * @throws {Error} If the instance owns a valid pointer but the subclass has not implemented `destroyFn`.
-     */
+   * Invalidate this wrapper and release its handle if it is owned.
+   *
+   * Calling dispose() again does nothing. Borrowed wrappers are invalidated
+   * without freeing their owner's memory. The pointer is cleared before
+   * native destruction so the wrapper cannot be reused during cleanup.
+   *
+   * @throws {Error} If an owned handle has no destroyFn.
+   */
   dispose(): void {
-    if (!this.ptr || !this.ownsPtr) {
+    if (!this.ptr) {
       return;
     }
 
     const ctor = this.constructor as typeof KernelOpaquePtr;
 
-    if (!ctor.destroyFn) {
+    if (this.ownsPtr && !ctor.destroyFn) {
       throw new Error(`${this.constructor.name} owns a pointer but has no destroyFn`);
     }
 
-    ctor.destroyFn(this.ptr);
+    const ptr = this.ptr;
     this.ptr = null;
     this.parent = null;
+    if (this.ownsPtr) ctor.destroyFn!(ptr);
   }
 
   /**
-     * Create a deep independent copy of this native object.
-     *
-     * @returns A new owned instance pointing to a duplicated native handle.
-     * @throws {TypeError} If the subclass does not implement a native `copyFn`.
-     * @throws {Error} If attempting to copy an object that has already been disposed.
-     */
+   * Create an owned wrapper using the native copy operation.
+   *
+   * The returned handle has its own disposal responsibility. Whether its
+   * underlying resources are duplicated or shared depends on the native type.
+   * Borrowed views must still have a valid parent when copied.
+   *
+   * @returns Another owned wrapper.
+   * @throws {TypeError} If the native type cannot be copied.
+   * @throws {Error} If this wrapper is invalid or native copying fails.
+   */
   copy(): this {
     const ctor = this.constructor as typeof KernelOpaquePtr;
 
@@ -136,20 +152,23 @@ export abstract class KernelOpaquePtr {
       throw new Error("Object has been disposed");
     }
 
-    const ptr = ctor.copyFn(this.ptr);
+    const ptr = ctor.copyFn(this.getHandle());
     return new (this.constructor as any)(ptr, true);
   }
 
   /**
-     * Convert a borrowed view into an owned instance by copying its native data.
-     * * If the instance already owns its pointer, this operation performs no action.
-     * Otherwise, it allocates new native memory, copies the contents, and cuts ties with the parent view.
-     *
-     * @returns The instance itself, now modified to own its isolated pointer.
-     * @throws {TypeError} If the subclass does not implement a native `copyFn`.
-     * @throws {Error} If attempting to detach an object that has already been disposed.
-     */
+   * Replace a borrowed handle with an owned native copy in this wrapper.
+   *
+   * A valid owned wrapper is returned unchanged. Detaching a borrowed
+   * wrapper removes its parent dependency and invalidates existing child
+   * views into its previous storage. The caller must dispose the new handle.
+   *
+   * @returns This wrapper, now owning its handle.
+   * @throws {TypeError} If the borrowed native type cannot be copied.
+   * @throws {Error} If this wrapper is invalid or native copying fails.
+   */
   detach(): this {
+    this.getHandle();
     if (this.ownsPtr) {
       return this;
     }
@@ -164,7 +183,8 @@ export abstract class KernelOpaquePtr {
       throw new Error("Object has been disposed");
     }
 
-    const copiedPtr = ctor.copyFn(this.ptr);
+    const copiedPtr = ctor.copyFn(this.getHandle());
+    if (!copiedPtr) throw new Error(`Failed to copy ${this.constructor.name}`);
 
     this.ptr = copiedPtr;
     this.ownsPtr = true;
@@ -174,23 +194,27 @@ export abstract class KernelOpaquePtr {
   }
 
   /**
-     * Check whether this object has been disposed.
-     *
-     * @returns True if the native resource has been freed, false otherwise.
-     */
+   * Check whether this wrapper can still be used.
+   *
+   * Borrowed views are invalid when their parent is invalid or has replaced
+   * its original pointer. This does not necessarily mean memory was freed.
+   *
+   * @returns True if this wrapper or its recorded ownership chain is invalid.
+   */
   isDisposed(): boolean {
-    return this.ptr === null;
+    return this.ptr === null || (!this.ownsPtr && this.parent !== null
+      && (this.parent.isDisposed() || this.parent.ptr !== this.parentHandle));
   }
 
   /**
-     * Internal accessor for the native handle.
-     *
-     * @returns The active native pointer bigint value.
-     * @throws {Error} If attempting to access the handle after the object has been disposed.
-     */
+   * Return the native pointer after checking this wrapper's lifetime.
+   *
+   * @returns The valid native pointer.
+   * @throws {Error} If this wrapper or its parent has become invalid.
+   */
   protected getHandle(): bigint {
-    if (!this.ptr) {
-      throw new Error("Object has been disposed");
+    if (this.isDisposed() || !this.ptr) {
+      throw new Error("Object or its parent has been disposed");
     }
 
     return this.ptr;
