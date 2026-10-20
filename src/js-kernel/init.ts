@@ -75,6 +75,9 @@ export {
 } from "./util/exceptions.js";
 
 export { ValidationInterfaceCallbacks } from "./validation.js";
+export { Wtxid, WitnessStack } from "./transaction.js";
+export { TxValidationResult, TxValidationState } from "./tx-validation.js";
+export { setMockTime } from "./mock-time.js";
 
 // Local imports required for internal initialization functions
 import { Context, ContextOptions } from "./context.js";

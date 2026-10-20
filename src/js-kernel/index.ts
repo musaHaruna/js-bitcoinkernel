@@ -98,3 +98,11 @@ export {makeContext, loadChainman} from "./init.js"
  * to depend on native-layer details.
  */
 // export * from "./ffi/bindings";
+
+export { NotificationInterfaceCallbacks, SynchronizationState } from "./notifications.js";
+export type { NotificationCallbackOptions } from "./notifications.js";
+export type { ValidationCallbacks } from "./validation.js";
+
+export { Wtxid, WitnessStack } from "./transaction.js";
+export { TxValidationResult, TxValidationState } from "./tx-validation.js";
+export { setMockTime } from "./mock-time.js";

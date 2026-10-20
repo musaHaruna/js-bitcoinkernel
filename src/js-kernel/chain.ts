@@ -1,8 +1,10 @@
-import { Block, BlockHash, BlockSpentOutputs, BlockTreeEntry, BlockValidationState } from "./block.js";
+import koffi from "koffi";
+import { Block, BlockHeader, BlockHash, BlockSpentOutputs, BlockTreeEntry, BlockValidationState } from "./block.js";
 import { Context } from "./context.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import {
   btck_chain_parameters_create,
+  btck_chain_parameters_create_signet,
   btck_chain_parameters_destroy,
   btck_chain_parameters_copy,
   btck_chain_parameters_get_consensus_params,
@@ -11,6 +13,7 @@ import {
   btck_chainstate_manager_options_destroy,
   btck_chainstate_manager_options_set_wipe_dbs,
   btck_chainstate_manager_options_set_worker_threads_num,
+  btck_chainstate_manager_options_set_database_cache_bytes,
   btck_chainstate_manager_options_update_block_tree_db_in_memory,
   btck_chainstate_manager_options_update_chainstate_db_in_memory,
 
@@ -114,9 +117,27 @@ export class ChainParameters extends KernelOpaquePtr {
       if (!btck_chain_parameters_create) {
         throw new Error("btck_chain_parameters_create unavailable");
       }
+      if (!Number.isInteger(arg) || arg < ChainType.MAINNET || arg > ChainType.REGTEST) throw new RangeError("Invalid chain type");
       const ptr = btck_chain_parameters_create(arg) as bigint;
       super(ptr, true, null);
     }
+  }
+
+  /**
+   * Create signet network parameters with a custom challenge script.
+   *
+   * Pass the raw script bytes, without a serialized length prefix. These
+   * parameters select custom signet consensus rules; they do not configure
+   * peer discovery or start a network connection.
+   *
+   * @param challenge - Script that signet block solutions must satisfy.
+   * @returns Owned chain parameters that the caller must dispose.
+   * @throws {Error} If native parameter creation fails.
+   */
+  static createSignet(challenge: Uint8Array): ChainParameters {
+    const ptr = btck_chain_parameters_create_signet(challenge, challenge.length);
+    if (!ptr) throw new Error('Failed to create signet chain parameters');
+    return new ChainParameters(ptr, true);
   }
 
   /**
@@ -198,7 +219,7 @@ export class ChainstateManagerOptions extends KernelOpaquePtr {
 
       const ptr = btck_chainstate_manager_options_create(contextHandle, datadirBuf, BigInt(datadirBuf.length), blocksDirBuf, BigInt(blocksDirBuf.length)) as bigint;
 
-      if (ptr === 0n) {
+      if (!ptr) {
         throw new Error("Failed to create native ChainstateManagerOptions");
       }
 
@@ -233,7 +254,7 @@ export class ChainstateManagerOptions extends KernelOpaquePtr {
       throw new Error("btck_chainstate_manager_options_set_wipe_dbs unavailable");
     }
 
-    return btck_chainstate_manager_options_set_wipe_dbs(this.getHandle(), wipeBlockTreeDb, wipeChainstateDb);
+    return btck_chainstate_manager_options_set_wipe_dbs(this.getHandle(), Number(wipeBlockTreeDb), Number(wipeChainstateDb));
   }
 
   /**
@@ -252,6 +273,25 @@ export class ChainstateManagerOptions extends KernelOpaquePtr {
     }
 
     btck_chainstate_manager_options_set_worker_threads_num(this.getHandle(), workerThreads);
+  }
+
+  /**
+   * Set the total database cache budget before creating a manager.
+   *
+   * The native default is 450 MiB. The minimum is 4 MiB; this is a cache
+   * budget rather than a limit on the process's total memory usage.
+   *
+   * @param bytes - Exact byte count as a safe integer number or uint64 bigint.
+   * @throws {RangeError} If the value is unsafe, out of range, or rejected by the kernel.
+   * @throws {Error} If these options have been disposed.
+   */
+  setDatabaseCacheBytes(bytes: number | bigint): void {
+    if (typeof bytes === 'number' && !Number.isSafeInteger(bytes)) throw new RangeError('Invalid database cache size');
+    const value = BigInt(bytes);
+    if (value < 4n * 1024n * 1024n || value > 0xffffffffffffffffn
+      || btck_chainstate_manager_options_set_database_cache_bytes(this.getHandle(), value) !== 0) {
+      throw new RangeError(`Invalid database cache size: ${bytes}`);
+    }
   }
 
   /**
@@ -358,8 +398,9 @@ export class Chain extends KernelOpaquePtr {
       throw new Error("btck_chain_get_by_height unavailable");
     }
 
+    if (!Number.isSafeInteger(height) || height < 0 || height >= this.length) throw new RangeError("Height out of range");
     const ptr = btck_chain_get_by_height(this.getHandle(), height) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to get BlockTreeEntry at height ${height}`);
     }
 
@@ -458,7 +499,7 @@ export class BlockTreeEntrySequence extends LazySequence<BlockTreeEntry> {
     // Peer-access bypass to extract the protected Chain pointer handle
     const ptr = btck_chain_get_by_height((this._chain as any).getHandle(), index) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to get BlockTreeEntry pointer at height ${index}`);
     }
 
@@ -557,7 +598,7 @@ export class ChainstateManager extends KernelOpaquePtr {
       const optionsHandle = (arg1 as any).getHandle();
       const ptr = btck_chainstate_manager_create(optionsHandle) as bigint;
 
-      if (ptr === 0n) {
+      if (!ptr) {
         throw new Error("Failed to create native ChainstateManager");
       }
 
@@ -618,7 +659,7 @@ export class ChainstateManager extends KernelOpaquePtr {
     }
 
     const ptr = btck_chainstate_manager_get_best_entry(this.getHandle()) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get best BlockTreeEntry pointer");
     }
 
@@ -639,7 +680,7 @@ export class ChainstateManager extends KernelOpaquePtr {
     }
 
     const ptr = btck_chainstate_manager_get_active_chain(this.getHandle()) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get active Chain pointer");
     }
 
@@ -665,8 +706,8 @@ export class ChainstateManager extends KernelOpaquePtr {
     // Convert path strings into unique UTF-8 byte buffers
     const encodedPaths = paths.map(p => Buffer.from(p.toString(), "utf8"));
 
-    // Build the array mapping lengths (`uint64*`)
-    const pathLengths = new BigUint64Array(encodedPaths.map(buf => BigInt(buf.length)));
+    const pathLengths = paths.length ? Buffer.alloc(koffi.sizeof('size_t') * paths.length) : null;
+    if (pathLengths) koffi.encode(pathLengths, koffi.array('size_t', paths.length), encodedPaths.map(buf => buf.length));
 
     // Pass JavaScript array of Buffers directly matching C's `const char**` setup in Koffi
     const result = btck_chainstate_manager_import_blocks(
@@ -676,7 +717,7 @@ export class ChainstateManager extends KernelOpaquePtr {
       BigInt(paths.length)
     );
 
-    return result !== 0;
+    return result === 0;
   }
 
   /**
@@ -713,36 +754,28 @@ export class ChainstateManager extends KernelOpaquePtr {
   }
 
   /**
-     * Submit an isolated block header to the manager for validation and structure tracking.
-     *
-     * Evaluates initial headers to ensure they comply with network parameters, difficulty expectations,
-     * and valid chaining targets before extending the block tree hierarchy. This optimization prevents full-block
-     * download requirements for non-viable paths.
-     *
-     * @param header - The block header instance structure targeting verification.
-     * @returns A fresh, **fully-owned** {@link BlockValidationState} tracking error flags and audit benchmarks.
-     * @throws {ProcessBlockHeaderException} If native processing execution encounters an unrecoverable structural fault.
-     */
-  processBlockHeader(header: any): BlockValidationState {
+   * Process a block header and return its native validation state.
+   *
+   * A rejected header is reported through the returned state's validation
+   * mode and result. Rejection alone does not throw. The state is owned by
+   * the caller and must be disposed, including when the header is invalid.
+   *
+   * @param header - Header to submit to this chainstate manager.
+   * @returns An owned validation state describing the result.
+   * @throws {ProcessBlockHeaderException} If native processing returns no state.
+   * @throws {Error} If a binding is unavailable or a required handle is invalid.
+   */
+  processBlockHeader(header: BlockHeader): BlockValidationState {
     if (!btck_chainstate_manager_process_block_header) {
       throw new Error("btck_chainstate_manager_process_block_header unavailable");
     }
 
-    // Bypass the strict static context checking using 'as any'
-    const state = (BlockValidationState as any).create() as BlockValidationState;
-
-    const result = btck_chainstate_manager_process_block_header(
+    const ptr = btck_chainstate_manager_process_block_header(
       this.getHandle(),
-      (header as any).getHandle(),
-      (state as any).getHandle()
-    );
-
-    if (result !== 0) {
-      state.dispose();
-      throw new ProcessBlockHeaderException(result);
-    }
-
-    return state;
+      (header as any).getHandle()
+    ) as bigint;
+    if (!ptr) throw new ProcessBlockHeaderException(-1);
+    return BlockValidationState.fromHandle(ptr);
   }
 
   /**
@@ -819,7 +852,7 @@ export class BlockMap extends MapBase {
     const keyHandle = (key as any).getHandle();
 
     const ptr = btck_block_read(chainmanHandle, keyHandle) as bigint;
-    if (ptr !== 0n) {
+    if (ptr) {
       // Because btck_block_read allocates an owned handle, we must
       // immediately free it here to prevent a native memory leak.
       if (btck_block_destroy) {
@@ -851,7 +884,7 @@ export class BlockMap extends MapBase {
     const keyHandle = (key as any).getHandle();
 
     const ptr = btck_block_read(chainmanHandle, keyHandle) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Error reading Block for ${key.toString()} from disk`);
     }
 
@@ -900,7 +933,7 @@ export class BlockSpentOutputsMap extends MapBase {
     const keyHandle = (key as any).getHandle();
 
     const ptr = btck_block_spent_outputs_read(chainmanHandle, keyHandle) as bigint;
-    if (ptr !== 0n) {
+    if (ptr) {
       if (btck_block_spent_outputs_destroy) {
         btck_block_spent_outputs_destroy(ptr);
       }
@@ -934,7 +967,7 @@ export class BlockSpentOutputsMap extends MapBase {
     const keyHandle = (key as any).getHandle();
 
     const ptr = btck_block_spent_outputs_read(chainmanHandle, keyHandle) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Error reading BlockSpentOutputs for ${key.toString()} from disk`);
     }
 
@@ -972,7 +1005,7 @@ export class BlockTreeEntryMap extends MapBase {
 
     const ptr = btck_chainstate_manager_get_block_tree_entry_by_hash(chainmanHandle, keyHandle) as bigint;
 
-    return ptr !== 0n;
+    return Boolean(ptr);
   }
 
   /**
@@ -996,7 +1029,7 @@ export class BlockTreeEntryMap extends MapBase {
     const keyHandle = (key as any).getHandle();
 
     const ptr = btck_chainstate_manager_get_block_tree_entry_by_hash(chainmanHandle, keyHandle) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`KeyError: ${key.toString()} not found`);
     }
 

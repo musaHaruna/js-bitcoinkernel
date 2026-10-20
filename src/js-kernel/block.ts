@@ -1,3 +1,4 @@
+import { flagsWithin } from "./util/numbers.js";
 import { ConsensusParams } from "./chain.js";
 import {
   btck_block_hash_create,
@@ -15,6 +16,7 @@ import {
   btck_block_header_get_bits,
   btck_block_header_get_version,
   btck_block_header_get_nonce,
+  btck_block_header_get_merkle_root,
   btck_block_header_to_bytes,
 
   btck_block_validation_state_create,
@@ -46,7 +48,7 @@ import {
   btck_block_spent_outputs_destroy,
   btck_block_spent_outputs_copy,
 } from "./ffi/bindings.js";
-import koffi from "koffi"
+import { ByteWriter } from "./writer.js";
 import { KernelOpaquePtr } from "./ffi/KernelOpaquePtr.js";
 import { Transaction, TransactionSpentOutputs } from "./transaction.js";
 import { LazySequence } from "./util/sequence.js";
@@ -139,7 +141,7 @@ export class BlockHash extends KernelOpaquePtr {
 
     const ptr = btck_block_hash_create(bytes) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to create BlockHash");
     }
 
@@ -247,7 +249,7 @@ export class BlockHeader extends KernelOpaquePtr {
 
     const ptr = btck_block_header_create(rawHeader, rawHeader.length) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to parse BlockHeader");
     }
 
@@ -290,6 +292,21 @@ export class BlockHeader extends KernelOpaquePtr {
     const ptr = btck_block_header_get_prev_hash(this.getHandle()) as bigint;
 
     return BlockHash.fromView(ptr, this);
+  }
+
+  /**
+   * Return the header's 32-byte transaction Merkle root.
+   *
+   * Bytes use serialized order. Reverse a copy when a display-order hash
+   * is needed. The returned array owns its bytes and can outlive the header.
+   *
+   * @returns A copy of the Merkle root bytes.
+   * @throws {Error} If the header or its owner has been disposed.
+   */
+  get merkleRoot(): Uint8Array {
+    const bytes = new Uint8Array(32);
+    btck_block_header_get_merkle_root(this.getHandle(), bytes);
+    return bytes;
   }
 
   /**
@@ -398,7 +415,8 @@ export class BlockHeader extends KernelOpaquePtr {
      * @returns A diagnostic string capturing the big-endian hexadecimal hash identifier path.
      */
   override toString(): string {
-    return `BlockHeader hash=${this.blockHash.toString()}`;
+    using hash = this.blockHash;
+    return `BlockHeader hash=${hash.toString()}`;
   }
 }
 
@@ -479,7 +497,7 @@ export class BlockValidationState extends KernelOpaquePtr {
 
       const newPtr = btck_block_validation_state_create() as bigint;
 
-      if (newPtr === 0n) {
+      if (!newPtr) {
         throw new Error("Failed to create BlockValidationState");
       }
 
@@ -608,7 +626,7 @@ export class BlockTreeEntry extends KernelOpaquePtr {
      * @returns A {@link BlockTreeEntry} view mapping the parent block node.
      * @throws {Error} If `btck_block_tree_entry_get_previous` function bindings are missing.
      */
-  get previous(): BlockTreeEntry {
+  get previous(): BlockTreeEntry | null {
     if (!btck_block_tree_entry_get_previous) {
       throw new Error("btck_block_tree_entry_get_previous unavailable");
     }
@@ -617,7 +635,7 @@ export class BlockTreeEntry extends KernelOpaquePtr {
       this.getHandle(),
     ) as bigint;
 
-    return BlockTreeEntry.fromView(ptr, this.parent);
+    return ptr ? BlockTreeEntry.fromView(ptr, this.parent ?? this) : null;
   }
 
   /**
@@ -656,7 +674,7 @@ export class BlockTreeEntry extends KernelOpaquePtr {
      * @throws {Error} If `btck_block_tree_entry_get_ancestor` function bindings are missing.
      */
   getAncestor(height: number): BlockTreeEntry {
-    if (height < 0 || height > this.height) {
+    if (!Number.isSafeInteger(height) || height < 0 || height > this.height) {
       throw new RangeError(
         `height ${height} out of range for entry at height ${this.height}`,
       );
@@ -671,7 +689,7 @@ export class BlockTreeEntry extends KernelOpaquePtr {
       height,
     ) as bigint;
 
-    return BlockTreeEntry.fromView(ptr, this.parent);
+    return BlockTreeEntry.fromView(ptr, this.parent ?? this);
   }
 
   /**
@@ -744,6 +762,7 @@ export class TransactionSequence extends LazySequence<Transaction> {
      * @throws {Error} If `btck_block_count_transactions` function bindings are missing.
      */
   get length(): number {
+    (this._block as any).getHandle();
     if (this._cachedLen === undefined) {
       if (!btck_block_count_transactions) {
         throw new Error("btck_block_count_transactions unavailable");
@@ -766,7 +785,7 @@ export class TransactionSequence extends LazySequence<Transaction> {
      * @throws {Error} If the native FFI function bindings are missing or pointer extraction fails.
      */
   public override getItem(index: number): Transaction {
-    if (this._cachedLen !== undefined && (index < 0 || index >= this._cachedLen)) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= this.length) {
       throw new RangeError(`Index out of bounds: ${index}`);
     }
 
@@ -777,7 +796,7 @@ export class TransactionSequence extends LazySequence<Transaction> {
     // Cast to 'any' to bypass cross-subclass protected access restrictions
     const txPtr = btck_block_get_transaction_at((this._block as any).getHandle(), BigInt(index)) as bigint;
 
-    if (txPtr === 0n) {
+    if (!txPtr) {
       throw new Error(`Failed to get transaction at index ${index}`);
     }
 
@@ -828,7 +847,7 @@ export class Block extends KernelOpaquePtr {
 
     const ptr = btck_block_create(rawBlock, BigInt(rawBlock.length)) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to create Block from raw bytes");
     }
 
@@ -854,7 +873,7 @@ export class Block extends KernelOpaquePtr {
 
     const ptr = btck_block_get_hash(this.getHandle()) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get block hash");
     }
 
@@ -878,7 +897,7 @@ export class Block extends KernelOpaquePtr {
 
     const ptr = btck_block_get_header(this.getHandle()) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get block header");
     }
 
@@ -911,30 +930,7 @@ export class Block extends KernelOpaquePtr {
       throw new Error("btck_block_to_bytes unavailable");
     }
 
-    const chunks: Uint8Array[] = [];
-
-    // Dynamic standard callback matching the WriteBytesCb prototype declaration
-    const callback = (bytesPtr: any, size: bigint, _userData: any) => {
-      const buf = koffi.decode(bytesPtr, "uint8", Number(size));
-      chunks.push(new Uint8Array(buf));
-      return 1; // Return 1 to indicate successful write chunk processing
-    };
-
-    const ret = btck_block_to_bytes(this.getHandle(), callback, null) as number;
-    if (ret !== 1) {
-      throw new Error(`Failed to serialize block to bytes (code: ${ret})`);
-    }
-
-    // Assemble chunks into a unified array buffer view
-    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    return result;
+    return Uint8Array.from(new ByteWriter().write(btck_block_to_bytes, this.getHandle()));
   }
 
   /**
@@ -958,13 +954,17 @@ export class Block extends KernelOpaquePtr {
       throw new Error("btck_block_check unavailable");
     }
 
-    const state = new BlockValidationState(); // Spawns a fresh context internally
+    flagsWithin(flags, BlockCheckFlags.ALL);
+    const blockHandle = this.getHandle();
+    const paramsHandle = (consensusParams as any).getHandle();
+    const state = new BlockValidationState();
 
     // Cast to 'any' to bypass cross-subclass protected access restrictions in TypeScript
-    const ret = btck_block_check(this.getHandle(), (consensusParams as any).getHandle(), flags, (state as any).getHandle()) as number;
+    const ret = btck_block_check(blockHandle, paramsHandle, flags, (state as any).getHandle()) as number;
 
     const isValid = state.validationMode === ValidationMode.VALID;
     if ((ret === 1) !== isValid) {
+      state.dispose();
       throw new Error("Assertion failed: Block validation status code mismatch with ValidationMode");
     }
 
@@ -985,7 +985,7 @@ export class Block extends KernelOpaquePtr {
 
     const ptr = btck_block_get_transaction_at(this.getHandle(), BigInt(transactionIndex)) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to get transaction at index ${transactionIndex}`);
     }
 
@@ -998,7 +998,8 @@ export class Block extends KernelOpaquePtr {
      * @returns A string capturing the big-endian hexadecimal block identifier alongside transaction count sizes.
      */
   override toString(): string {
-    return `<Block hash=${this.blockHash.toString()} txs=${this.transactions.length}>`;
+    using hash = this.blockHash;
+    return `<Block hash=${hash.toString()} txs=${this.transactions.length}>`;
   }
 
   /**
@@ -1060,7 +1061,7 @@ export class BlockSpentOutputs extends KernelOpaquePtr {
 
     const ptr = btck_block_spent_outputs_get_transaction_spent_outputs_at(this.getHandle(), BigInt(index)) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to get transaction spent outputs at index ${index}`);
     }
 
@@ -1122,6 +1123,7 @@ export class TransactionSpentOutputsSequence extends LazySequence<TransactionSpe
      * @throws {Error} If `btck_block_spent_outputs_count` function bindings are missing.
      */
   get length(): number {
+    (this.blockSpentOutputs as any).getHandle();
     if (this.cachedLen === undefined) {
       if (!btck_block_spent_outputs_count) {
         throw new Error("btck_block_spent_outputs_count unavailable");
@@ -1144,7 +1146,7 @@ export class TransactionSpentOutputsSequence extends LazySequence<TransactionSpe
      * @throws {Error} If native FFI bindings are missing or pointer parsing resolves to null.
      */
   public override getItem(index: number): TransactionSpentOutputs {
-    if (this.cachedLen !== undefined && (index < 0 || index >= this.cachedLen)) {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= this.length) {
       throw new RangeError(`Index out of bounds: ${index}`);
     }
 
@@ -1158,7 +1160,7 @@ export class TransactionSpentOutputsSequence extends LazySequence<TransactionSpe
       BigInt(index)
     ) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to get transaction spent outputs at index ${index}`);
     }
 

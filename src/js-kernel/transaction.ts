@@ -1,4 +1,11 @@
+import { TxValidationState } from "./tx-validation.js";
+import { ValidationMode } from "./block.js";
+import { int64 } from "./util/numbers.js";
 import {
+  btck_wtxid_copy, btck_wtxid_destroy, btck_wtxid_equals, btck_wtxid_to_bytes,
+  btck_transaction_get_wtxid, btck_transaction_get_version, btck_transaction_has_witness,
+  btck_transaction_check, btck_transaction_input_get_script_sig, btck_transaction_input_get_witness_stack,
+  btck_witness_stack_copy, btck_witness_stack_destroy, btck_witness_stack_count_items, btck_witness_stack_get_item_at,
   btck_txid_copy,
   btck_txid_destroy,
   btck_txid_equals,
@@ -181,7 +188,7 @@ export class TransactionOutPoint extends KernelOpaquePtr {
 
     const ptr = btck_transaction_out_point_get_txid(this.getHandle()) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get Txid pointer from TransactionOutPoint");
     }
 
@@ -235,6 +242,33 @@ export class TransactionInput extends KernelOpaquePtr {
   }
 
   /**
+   * Return the input's raw scriptSig bytes.
+   *
+   * The result excludes the CompactSize length prefix used in transaction
+   * serialization. Its bytes are copied and can outlive the input wrapper.
+   *
+   * @returns A copy of the scriptSig, which may be empty.
+   * @throws {Error} If the input is invalid or native serialization fails.
+   */
+  get scriptSig(): Uint8Array {
+    return Uint8Array.from(new ByteWriter().write(btck_transaction_input_get_script_sig, this.getHandle()));
+  }
+
+  /**
+   * Borrow this input's witness stack.
+   *
+   * The view depends on this input and its owner remaining valid. Copy or
+   * detach the stack before retaining it beyond that lifetime. Individual
+   * items read from the stack are copied JavaScript byte arrays.
+   *
+   * @returns A borrowed witness stack, possibly empty.
+   * @throws {Error} If the input is invalid or the native pointer is null.
+   */
+  get witnessStack(): WitnessStack {
+    return WitnessStack.fromView(btck_transaction_input_get_witness_stack(this.getHandle()), this);
+  }
+
+  /**
      * The outpoint being spent by this input.
      *
      * @returns The TransactionOutPoint referencing the targeted previous output,
@@ -249,7 +283,7 @@ export class TransactionInput extends KernelOpaquePtr {
 
     const ptr = btck_transaction_input_get_out_point(this.getHandle()) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get TransactionOutPoint pointer from TransactionInput");
     }
 
@@ -334,9 +368,9 @@ export class TransactionOutput extends KernelOpaquePtr {
       if (!btck_transaction_output_create) {
         throw new Error("btck_transaction_output_create unavailable");
       }
-      const amount = BigInt(arg2 as number | bigint);
+      const amount = int64(arg2 as number | bigint);
       const ptr = btck_transaction_output_create((arg1 as any).getHandle(), amount) as bigint;
-      if (ptr === 0n) {
+      if (!ptr) {
         throw new Error("Failed to create native TransactionOutput");
       }
       super(ptr, true, null);
@@ -373,7 +407,7 @@ export class TransactionOutput extends KernelOpaquePtr {
       throw new Error("btck_transaction_output_get_script_pubkey unavailable");
     }
     const ptr = btck_transaction_output_get_script_pubkey(this.getHandle()) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get ScriptPubkey pointer from TransactionOutput");
     }
     return new ScriptPubkey(ptr, false, this);
@@ -430,6 +464,7 @@ export class TransactionInputSequence extends LazySequence<TransactionInput> {
      * @throws {Error} If `btck_transaction_count_inputs` is unavailable.
      */
   override get length(): number {
+    (this._transaction as any).getHandle();
     if (this._cachedLen === undefined) {
       if (!btck_transaction_count_inputs) {
         throw new Error("btck_transaction_count_inputs unavailable");
@@ -461,7 +496,7 @@ export class TransactionInputSequence extends LazySequence<TransactionInput> {
     const txHandle = (this._transaction as any).getHandle();
     const ptr = btck_transaction_get_input_at(txHandle, BigInt(index)) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to retrieve TransactionInput at index ${index}`);
     }
 
@@ -502,6 +537,7 @@ export class TransactionOutputSequence extends LazySequence<TransactionOutput> {
      * @throws {Error} If `btck_transaction_count_outputs` is unavailable.
      */
   override get length(): number {
+    (this._transaction as any).getHandle();
     if (this._cachedLen === undefined) {
       if (!btck_transaction_count_outputs) {
         throw new Error("btck_transaction_count_outputs unavailable");
@@ -532,7 +568,7 @@ export class TransactionOutputSequence extends LazySequence<TransactionOutput> {
     const txHandle = (this._transaction as any).getHandle();
     const ptr = btck_transaction_get_output_at(txHandle, BigInt(index)) as bigint;
 
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to retrieve TransactionOutput at index ${index}`);
     }
 
@@ -579,7 +615,7 @@ export class Transaction extends KernelOpaquePtr {
         throw new Error("btck_transaction_create unavailable");
       }
       const ptr = btck_transaction_create(arg1, BigInt(arg1.length)) as bigint;
-      if (ptr === 0n) {
+      if (!ptr) {
         throw new Error("Failed to parse native Transaction data");
       }
       super(ptr, true, null);
@@ -600,7 +636,7 @@ export class Transaction extends KernelOpaquePtr {
       throw new Error("btck_transaction_get_input_at unavailable");
     }
     const ptr = btck_transaction_get_input_at(this.getHandle(), BigInt(index)) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to retrieve TransactionInput at index ${index}`);
     }
     return new TransactionInput(ptr, false, this);
@@ -618,7 +654,7 @@ export class Transaction extends KernelOpaquePtr {
       throw new Error("btck_transaction_get_output_at unavailable");
     }
     const ptr = btck_transaction_get_output_at(this.getHandle(), BigInt(index)) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to retrieve TransactionOutput at index ${index}`);
     }
     return new TransactionOutput(ptr, false, this);
@@ -657,10 +693,76 @@ export class Transaction extends KernelOpaquePtr {
       throw new Error("btck_transaction_get_txid unavailable");
     }
     const ptr = btck_transaction_get_txid(this.getHandle()) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get Txid pointer from Transaction");
     }
     return new Txid(ptr, false, this);
+  }
+
+  /**
+   * Return the transaction's version field.
+   *
+   * Reading the version does not validate the transaction.
+   *
+   * @returns The native transaction version.
+   * @throws {Error} If the transaction or its owner is invalid.
+   */
+  get version(): number {
+    return btck_transaction_get_version(this.getHandle());
+  }
+
+  /**
+   * Check whether the transaction contains witness data.
+   *
+   * This reports witness presence, not whether signatures or scripts pass.
+   *
+   * @returns True if the native transaction has witness data.
+   * @throws {Error} If the transaction or its owner is invalid.
+   */
+  get hasWitness(): boolean {
+    return Boolean(btck_transaction_has_witness(this.getHandle()));
+  }
+
+  /**
+   * Borrow the transaction identifier that includes witness data.
+   *
+   * For a transaction without witness data, its hash bytes equal the TXID.
+   * The wrapper type remains Wtxid. Copy or detach it before disposing the
+   * transaction if the identifier must be retained as a native object.
+   *
+   * @returns A Wtxid view tied to this transaction's lifetime.
+   * @throws {Error} If the transaction is invalid or native lookup returns null.
+   */
+  get wtxid(): Wtxid {
+    const ptr = btck_transaction_get_wtxid(this.getHandle());
+    if (!ptr) throw new Error('Failed to get Wtxid pointer from Transaction');
+    return Wtxid.fromView(ptr, this);
+  }
+
+  /**
+   * Run transaction checks that do not require chain or UTXO context.
+   *
+   * These checks do not verify signatures, confirm inputs exist, or establish
+   * mempool acceptance. An invalid transaction is reported in the returned
+   * state rather than by throwing. Dispose the state after inspecting it.
+   *
+   * @returns An owned transaction validation state.
+   * @throws {Error} If native setup fails, the transaction is invalidated,
+   * or the native return code disagrees with the validation mode.
+   */
+  check(): TxValidationState {
+    const handle = this.getHandle();
+    const state = new TxValidationState();
+    try {
+      const result = btck_transaction_check(handle, (state as any).getHandle());
+      if ((result === 1) !== (state.validationMode === ValidationMode.VALID)) {
+        throw new Error('Transaction validation status does not match its validation state');
+      }
+      return state;
+    } catch (error) {
+      state.dispose();
+      throw error;
+    }
   }
 
   /**
@@ -789,7 +891,7 @@ export class Coin extends KernelOpaquePtr {
       throw new Error("btck_coin_get_output unavailable");
     }
     const ptr = btck_coin_get_output(this.getHandle()) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error("Failed to get TransactionOutput handle from Coin");
     }
     return new TransactionOutput(ptr, false, this);
@@ -821,7 +923,7 @@ export class Coin extends KernelOpaquePtr {
  * individual consumed coins. By memoizing total counts and pulling pointers from native
  * layouts on-demand, it protects execution context loops against repetitive, costly FFI bindings.
  */
-export class CoinSequence implements Iterable<Coin> {
+export class CoinSequence extends LazySequence<Coin> {
   /** * The underlying collection structure managing the native spent outputs array tracking context. */
   private _spentOutputs: TransactionSpentOutputs;
   /** * Memoized collection size storage to optimize sequence loop calculations. */
@@ -833,6 +935,7 @@ export class CoinSequence implements Iterable<Coin> {
      * @param spentOutputs - The parent collection managing the underlying native data array.
      */
   constructor(spentOutputs: TransactionSpentOutputs) {
+    super();
     this._spentOutputs = spentOutputs;
   }
 
@@ -844,6 +947,7 @@ export class CoinSequence implements Iterable<Coin> {
      * @throws {Error} If `btck_transaction_spent_outputs_count` is unavailable.
      */
   get length(): number {
+    (this._spentOutputs as any).getHandle();
     if (this._cachedLen === undefined) {
       if (!btck_transaction_spent_outputs_count) {
         throw new Error("btck_transaction_spent_outputs_count unavailable");
@@ -863,7 +967,7 @@ export class CoinSequence implements Iterable<Coin> {
      * @throws {RangeError} If the index argument drops below 0 or goes out of bounds.
      * @throws {Error} If the native FFI function bindings are missing or pointer extraction fails.
      */
-  get(index: number): Coin {
+  protected override getItem(index: number): Coin {
     if (index < 0 || index >= this.length) {
       throw new RangeError(`Index out of bounds: ${index}`);
     }
@@ -872,7 +976,7 @@ export class CoinSequence implements Iterable<Coin> {
     }
     const handle = (this._spentOutputs as any).getHandle();
     const ptr = btck_transaction_spent_outputs_get_coin_at(handle, BigInt(index)) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to retrieve Coin at index ${index}`);
     }
     return new Coin(ptr, false, this._spentOutputs);
@@ -931,7 +1035,7 @@ export class TransactionSpentOutputs extends KernelOpaquePtr {
       throw new Error("btck_transaction_spent_outputs_get_coin_at unavailable");
     }
     const ptr = btck_transaction_spent_outputs_get_coin_at(this.getHandle(), BigInt(index)) as bigint;
-    if (ptr === 0n) {
+    if (!ptr) {
       throw new Error(`Failed to retrieve Coin at index ${index}`);
     }
     return new Coin(ptr, false, this);
@@ -963,4 +1067,167 @@ export class TransactionSpentOutputs extends KernelOpaquePtr {
   override copy(): this {
     return super.copy();
   }
+}
+/**
+ * Native witness transaction identifier.
+ *
+ * WTXID includes witness data; for transactions without witness its bytes
+ * equal the TXID. This wrapper remains a distinct type from Txid.
+ * Borrowed instances depend on their parent. Dispose owned copies.
+ */
+export class Wtxid extends KernelOpaquePtr {
+  protected static override destroyFn = btck_wtxid_destroy;
+  protected static override copyFn = btck_wtxid_copy;
+
+  /**
+   * Wrap an existing native witness transaction identifier.
+   *
+   * @param ptr - Non-null native WTXID pointer.
+   * @param ownsPtr - Whether this wrapper must destroy the handle.
+   * @param parent - Optional owner used to check a borrowed pointer's lifetime.
+   * @throws {Error} If the pointer is null or the parent is invalid.
+   */
+  constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+    super(ptr, ownsPtr, parent);
+  }
+
+  /**
+   * Copy the identifier into a 32-byte array in serialized order.
+   *
+   * @returns Bytes that remain valid after this wrapper is disposed.
+   * @throws {Error} If this wrapper or its owner is invalid.
+   */
+  toBytes(): Uint8Array {
+    const bytes = new Uint8Array(32);
+    btck_wtxid_to_bytes(this.getHandle(), bytes);
+    return bytes;
+  }
+
+  /**
+   * Compare identifier bytes with another Wtxid.
+   *
+   * A Txid or another unrelated value returns false even if it represents
+   * identical hash bytes. Both Wtxid handles must be valid for comparison.
+   *
+   * @param other - Value to compare.
+   * @returns True for equal Wtxid values.
+   * @throws {Error} If a Wtxid used in the comparison is invalid.
+   */
+  equals(other: unknown): boolean {
+    return other instanceof Wtxid && Boolean(btck_wtxid_equals(this.getHandle(), other.getHandle()));
+  }
+
+  /**
+   * Return the identifier as display-order hexadecimal.
+   *
+   * The serialized bytes are reversed in a copy before formatting.
+   *
+   * @returns The 64-character hash string.
+   * @throws {Error} If this wrapper or its owner is invalid.
+   */
+  override toString(): string {
+    return Buffer.from(this.toBytes()).reverse().toString('hex');
+  }
+}
+
+/**
+ * Native input witness stack with indexed and iterable access.
+ *
+ * Stacks borrowed from inputs share their lifetime. Copy or detach a
+ * borrowed stack to retain it independently, then dispose the owned handle.
+ * Each item returned by get(), slice(), or iteration is a byte copy.
+ */
+export class WitnessStack extends KernelOpaquePtr implements Iterable<Uint8Array> {
+  protected static override destroyFn = btck_witness_stack_destroy;
+  protected static override copyFn = btck_witness_stack_copy;
+
+  /**
+   * Wrap an existing native witness stack.
+   *
+   * @param ptr - Non-null native stack pointer.
+   * @param ownsPtr - Whether this wrapper must destroy the handle.
+   * @param parent - Optional owner of borrowed storage.
+   * @throws {Error} If the pointer is null or its parent is invalid.
+   */
+  constructor(ptr: bigint, ownsPtr = true, parent: KernelOpaquePtr | null = null) {
+    super(ptr, ownsPtr, parent);
+  }
+
+  /**
+   * Return the number of witness items, including empty items.
+   *
+   * @throws {Error} If this stack or its owner is invalid.
+   */
+  get length(): number {
+    return Number(btck_witness_stack_count_items(this.getHandle()));
+  }
+
+  /**
+   * Normalize a safe integer index and check the stack bounds.
+   *
+   * Negative indexes count from the end; -1 selects the last item.
+   *
+   * @throws {RangeError} If the index is unsafe or out of range.
+   */
+  private index(index: number): number {
+    if (!Number.isSafeInteger(index)) throw new RangeError('Witness item index must be a safe integer');
+    const length = this.length;
+    const normalized = index < 0 ? length + index : index;
+    if (normalized < 0 || normalized >= length) throw new RangeError('Witness item index out of range');
+    return normalized;
+  }
+
+  /**
+   * Copy one witness item's bytes without a serialized length prefix.
+   *
+   * @param index - Safe integer index; negative values count from the end.
+   * @returns An independent byte array, which may be empty.
+   * @throws {RangeError} If the index is invalid.
+   * @throws {Error} If the stack is invalid or native serialization fails.
+   */
+  get(index: number): Uint8Array {
+    const normalized = this.index(index);
+    return Uint8Array.from(new ByteWriter().write(
+      btck_witness_stack_get_item_at, this.getHandle(), normalized
+    ));
+  }
+
+  /**
+   * Copy a range of witness items into a new array.
+   *
+   * Bounds are truncated and clamped; negative values count from the end.
+   * An omitted or NaN start uses zero. An omitted or NaN end uses length.
+   *
+   * @param start - Inclusive start index.
+   * @param end - Exclusive end index.
+   * @returns Independent byte arrays for the selected items.
+   * @throws {Error} If the stack is invalid or native serialization fails.
+   */
+  slice(start?: number, end?: number): Uint8Array[] {
+    const length = this.length;
+    const clamp = (value: number | undefined, fallback: number): number => {
+      const integer = value === undefined || Number.isNaN(value) ? fallback : Math.trunc(value);
+      return integer < 0 ? Math.max(length + integer, 0) : Math.min(integer, length);
+    };
+    const result: Uint8Array[] = [];
+    for (let index = clamp(start, 0); index < clamp(end, length); index++) result.push(this.get(index));
+    return result;
+  }
+
+  /**
+   * Read and copy witness items one at a time in stack order.
+   *
+   * Keep the stack and any borrowed owner valid throughout iteration.
+   *
+   * @returns An iterator yielding independent byte arrays.
+   */
+  *[Symbol.iterator](): Iterator<Uint8Array> {
+    for (let index = 0; index < this.length; index++) yield this.get(index);
+  }
+  /**
+   * Return a diagnostic string containing the witness item count.
+   *
+   * @throws {Error} If the stack or its owner is invalid.
+   */
+  override toString(): string { return `<WitnessStack items=${this.length}>`; }
 }
