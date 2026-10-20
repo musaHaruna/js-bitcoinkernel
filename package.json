@@ -8,16 +8,19 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && tsc-alias && cpy \"src/js-kernel/binaries/**/*\" dist/js-kernel/binaries",
-    "prepublishOnly": "npm run build",
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc && tsc-alias && node scripts/copy-binaries.mjs",
+    "prepublishOnly": "npm run native:verify && npm run type-check && npm run lint && npm test && npm run build",
     "dev": "tsx ./src/js-kernel/index.ts",
-    "test": "tsx ./tests/index.ts",
+    "test": "node --import tsx --test tests/test-*.ts tests/util/test-*.ts",
     "start": "node dist/js-kernel/index.js",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "lint": "eslint .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && tsc -p tsconfig.tests.json",
+    "native:build": "node scripts/build-native.mjs",
+    "native:verify": "node scripts/verify-binaries.mjs"
   },
   "keywords": [
     "bitcoin",
@@ -37,7 +40,6 @@
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^25.9.1",
-    "cpy-cli": "^7.0.0",
     "eslint": "^10.4.1",
     "tsc-alias": "^1.8.17",
     "tsx": "^4.22.3",

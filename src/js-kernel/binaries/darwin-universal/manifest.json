@@ -1,0 +1,8 @@
+{
+  "platform": "darwin",
+  "arch": "universal",
+  "filename": "libbitcoinkernel.dylib",
+  "bitcoinCommit": "69ad2a67f26cbf74fbb23d201676822c9dd5c229",
+  "binarySha256": "1b1536c5e4247ed7befa605f3b94ab74b2b25ef2ad15e892c117fd25eec1c254",
+  "minimumSystem": "macOS 11"
+}

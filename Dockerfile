@@ -1,17 +1,9 @@
+FROM node:22-bookworm-slim AS node
 FROM ubuntu:24.04
-
-# Prevent interactive prompts during package installations
 ENV DEBIAN_FRONTEND=noninteractive
-
-# Install essential compilation tools and core Bitcoin build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    pkgconf \
-    python3 \
-    libevent-dev \
-    libboost-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake pkgconf python3 libboost-dev libevent-dev \
+    ca-certificates file \
     && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory inside the container
+COPY --from=node /usr/local/ /usr/local/
 WORKDIR /workspace

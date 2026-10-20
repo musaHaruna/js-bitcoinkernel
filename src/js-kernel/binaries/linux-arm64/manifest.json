@@ -1,0 +1,8 @@
+{
+  "platform": "linux",
+  "arch": "arm64",
+  "filename": "libbitcoinkernel.so",
+  "bitcoinCommit": "69ad2a67f26cbf74fbb23d201676822c9dd5c229",
+  "binarySha256": "5f9a04821d4a7793feac242470df5e946af1894b590ca374e172e4289bb944ee",
+  "minimumSystem": "glibc 2.39 (Ubuntu 24.04)"
+}
