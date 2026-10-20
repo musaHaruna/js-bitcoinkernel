@@ -1,3 +1,4 @@
+import { test } from "node:test";
 // Test are copied from https://github.com/TheCharlatan/rust-bitcoinkernel/blob/e91264a877576297f4345d68196c15e0a2a5846e/tests/test.rs#L332-L374
 
 import assert from "node:assert/strict";
@@ -19,8 +20,8 @@ function _test_verify_script(
   const scriptPubkeyBytes = Buffer.from(scriptPubkeyHex, "hex");
   const txToBytes = Buffer.from(txToHex, "hex");
 
-  const scriptPubkey = new ScriptPubkey(scriptPubkeyBytes);
-  const txTo = new Transaction(txToBytes);
+  using scriptPubkey = new ScriptPubkey(scriptPubkeyBytes);
+  using txTo = new Transaction(txToBytes);
 
   try {
     // Evaluate verification flags: ALL & ~TAPROOT
@@ -48,9 +49,7 @@ function _test_verify_script(
  * Valid Scripts Test Suite
  */
 function testValidScripts(): void {
-  console.log("=== Testing Valid Scripts ===");
 
-  console.log("Validating standard legacy transaction...");
   assert.equal(
     _test_verify_script(
       "76a9144bfbaf6afb76cc5771bc6404810d1cc041a6933988ac",
@@ -61,7 +60,6 @@ function testValidScripts(): void {
     true
   );
 
-  console.log("Validating SegWit nested in P2SH transaction...");
   assert.equal(
     _test_verify_script(
       "a91434c06f8c87e355e123bdc6dda4ffabc64b6989ef87",
@@ -72,7 +70,6 @@ function testValidScripts(): void {
     true
   );
 
-  console.log("Validating Native SegWit (v0) transaction...");
   assert.equal(
     _test_verify_script(
       "0020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d",
@@ -83,17 +80,13 @@ function testValidScripts(): void {
     true
   );
 
-  console.log("✓ All valid script tests passed");
-  console.log();
 }
 
 /**
  * Invalid Scripts Test Suite
  */
 function testInvalidScripts(): void {
-  console.log("=== Testing Invalid Scripts ===");
 
-  console.log("Rejecting legacy transaction with invalid signature destination...");
   assert.equal(
     _test_verify_script(
       "76a9144bfbaf6afb76cc5771bc6404810d1cc041a6933988ff",
@@ -104,7 +97,6 @@ function testInvalidScripts(): void {
     false
   );
 
-  console.log("Rejecting P2SH-nested SegWit with mismatched amount values...");
   assert.equal(
     _test_verify_script(
       "a91434c06f8c87e355e123bdc6dda4ffabc64b6989ef87",
@@ -115,7 +107,6 @@ function testInvalidScripts(): void {
     false
   );
 
-  console.log("Rejecting Native SegWit with non-matching script hash payload...");
   assert.equal(
     _test_verify_script(
       "0020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58f",
@@ -126,24 +117,7 @@ function testInvalidScripts(): void {
     false
   );
 
-  console.log("✓ All invalid script tests passed");
-  console.log();
 }
+test("Valid Scripts", testValidScripts);
 
-/**
- * Test Runner
- */
-function testScriptVerification(): void {
-  try {
-    testValidScripts();
-    testInvalidScripts();
-    console.log("ALL SCRIPT VERIFICATION TESTS PASSED");
-  } catch (err) {
-    console.error();
-    console.error("TEST FAILED");
-    console.error(err);
-    process.exit(1);
-  }
-}
-
-testScriptVerification();
+test("Invalid Scripts", testInvalidScripts);

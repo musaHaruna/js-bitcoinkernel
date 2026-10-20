@@ -1,3 +1,4 @@
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LazySequence } from "../../src/js-kernel/util/sequence.js";
 
@@ -37,83 +38,64 @@ class SimpleSequence extends LazySequence<string> {
  * LazySequence Length Test Suite
  */
 function testLazySequenceLength(): void {
-  console.log("=== Testing LazySequence Length ===");
 
   const owner = new MockOwner(3);
   const seqObj = new SimpleSequence(owner);
 
-  console.log("Testing evaluation of length property...");
   assert.equal(seqObj.length, 3, "Sequence length should match owner count");
   assert.equal(owner.count_calls, 1, "Length getter should have been invoked exactly once");
 
-  console.log("✓ LazySequence length tests passed");
-  console.log();
 }
 
 /**
  * LazySequence Positive Indexing Test Suite
  */
 function testLazySequencePositiveIndexing(): void {
-  console.log("=== Testing LazySequence Positive Indexing ===");
 
   const owner = new MockOwner(3);
   const seqObj = new SimpleSequence(owner);
 
-  console.log("Testing element access via positive indices...");
   assert.equal(seqObj.get(0), "item_0", "Item at index 0 mismatch");
   assert.equal(seqObj.get(2), "item_2", "Item at index 2 mismatch");
   assert.deepEqual(owner.get_calls, [0, 2], "Underlying item fetches tracked incorrectly");
 
-  console.log("✓ LazySequence positive indexing tests passed");
-  console.log();
 }
 
 /**
  * LazySequence Negative Indexing Test Suite
  */
 function testLazySequenceNegativeIndexing(): void {
-  console.log("=== Testing LazySequence Negative Indexing ===");
 
   const owner = new MockOwner(3);
   const seqObj = new SimpleSequence(owner);
 
-  console.log("Testing element access via Python-style negative indices...");
   assert.equal(seqObj.get(-1), "item_2", "Item at index -1 should evaluate to the last element");
   assert.equal(seqObj.get(-3), "item_0", "Item at index -3 should evaluate to the first element");
   assert.deepEqual(owner.get_calls, [2, 0], "Underlying item fetches tracked incorrectly");
 
-  console.log("✓ LazySequence negative indexing tests passed");
-  console.log();
 }
 
 /**
  * LazySequence Slicing Test Suite
  */
 function testLazySequenceSlicing(): void {
-  console.log("=== Testing LazySequence Slicing ===");
 
   const owner = new MockOwner(4);
   const seqObj = new SimpleSequence(owner);
 
-  console.log("Testing shallow extraction via slice()...");
   const result = seqObj.slice(1, 3);
   assert.deepEqual(result, ["item_1", "item_2"], "Sliced array elements mismatch");
   assert.deepEqual(owner.get_calls, [1, 2], "Underlying slice items evaluated eagerly instead of on-demand loop");
 
-  console.log("✓ LazySequence slicing tests passed");
-  console.log();
 }
 
 /**
  * LazySequence Out of Bounds Test Suite
  */
 function testLazySequenceOutOfBounds(): void {
-  console.log("=== Testing LazySequence Index Out of Bounds ===");
 
   const owner = new MockOwner(2);
   const seqObj = new SimpleSequence(owner);
-
-  console.log("Testing strict index safety limits...");
 
   // Positive boundary check
   assert.throws(
@@ -129,30 +111,26 @@ function testLazySequenceOutOfBounds(): void {
     "Accessing negative index past bounds must trigger a RangeError"
   );
 
-  console.log("✓ LazySequence out of bounds bounds tests passed");
-  console.log();
 }
+test("Lazy Sequence Length", testLazySequenceLength);
 
-/**
- * Test Runner
- *
- * Executes all LazySequence test suites in sequence.
- * Exits with error code 1 if any assertion fails.
- */
-function testSequence(): void {
-  try {
-    testLazySequenceLength();
-    testLazySequencePositiveIndexing();
-    testLazySequenceNegativeIndexing();
-    testLazySequenceSlicing();
-    testLazySequenceOutOfBounds();
-    console.log("ALL TESTS PASSED");
-  } catch (err) {
-    console.error();
-    console.error("TEST FAILED");
-    console.error(err);
-    process.exit(1);
+test("Lazy Sequence Positive Indexing", testLazySequencePositiveIndexing);
+
+test("Lazy Sequence Negative Indexing", testLazySequenceNegativeIndexing);
+
+test("Lazy Sequence Slicing", testLazySequenceSlicing);
+
+test("Lazy Sequence Out Of Bounds", testLazySequenceOutOfBounds);
+
+test("slice matches Array coercion and clamping", () => {
+  class Numbers extends LazySequence<number> {
+    get length() { return 4; }
+    protected getItem(index: number) { return [10, 20, 30, 40][index]; }
   }
-}
-
-testSequence();
+  const sequence = new Numbers();
+  for (const start of [undefined, NaN, Infinity, -Infinity, -1.5, 1.8, -20, 20]) {
+    for (const end of [undefined, NaN, Infinity, -Infinity, -1.5, 2.8, -20, 20]) {
+      assert.deepEqual(sequence.slice(start, end), [10, 20, 30, 40].slice(start, end));
+    }
+  }
+});

@@ -1,3 +1,4 @@
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { NotificationInterfaceCallbacks } from "../src/js-kernel/notifications.js";
 
@@ -17,7 +18,6 @@ const _noop = (): void => {};
  * Test: Initialization with no callbacks leaves all fields null/undefined
  */
 function testNotificationCallbacksEmpty(): void {
-  console.log("=== Testing Notification Callbacks Empty ===");
 
   const cb = new NotificationInterfaceCallbacks({});
 
@@ -29,15 +29,12 @@ function testNotificationCallbacksEmpty(): void {
     );
   }
 
-  console.log("✓ Empty callbacks test passed");
-  console.log();
 }
 
 /**
  * Test: Initialization with a single callback sets only that specific handle
  */
 function testNotificationCallbacksSingle(): void {
-  console.log("=== Testing Notification Callbacks Single ===");
 
   const cb = new NotificationInterfaceCallbacks({ warning_unset: _noop });
 
@@ -55,15 +52,12 @@ function testNotificationCallbacksSingle(): void {
     }
   }
 
-  console.log("✓ Single callback test passed");
-  console.log();
 }
 
 /**
  * Test: Passing an unrecognized callback option throws a runtime error
  */
 function testNotificationCallbacksUnknownRaises(): void {
-  console.log("=== Testing Notification Callbacks Unknown Raises ===");
 
   assert.throws(
     () => {
@@ -74,15 +68,12 @@ function testNotificationCallbacksUnknownRaises(): void {
     "Expected constructor to reject unrecognized callback names"
   );
 
-  console.log("✓ Unknown callback runtime rejection passed");
-  console.log();
 }
 
 /**
  * Test: Explicitly passing 'user_data' key inside options is rejected
  */
 function testNotificationCallbacksUserDataRejected(): void {
-  console.log("=== Testing Notification Callbacks User Data Rejected ===");
 
   assert.throws(
     () => {
@@ -93,8 +84,6 @@ function testNotificationCallbacksUserDataRejected(): void {
     "Expected constructor to reject 'user_data' field injection"
   );
 
-  console.log("✓ User data restriction verification passed");
-  console.log();
 }
 
 /*
@@ -104,7 +93,6 @@ function testNotificationCallbacksUserDataRejected(): void {
  * Test: The internal FFI bridge swallows user_data before executing user scope code
  */
 function testNotificationCallbacksSwallowUserData(): void {
-  console.log("=== Testing Notification Callbacks Swallow User Data ===");
 
   const seen: [number, number][] = [];
 
@@ -117,7 +105,6 @@ function testNotificationCallbacksSwallowUserData(): void {
   const mockUserDataPointer = null;
   const sampleWarningCode = 7;
 
-  // FIX: Remove koffi.proto and koffi.call.
   // Directly invoke the function wrapper to test the interceptor bridge logic.
   cb.nativeStruct.warning_unset(mockUserDataPointer, sampleWarningCode);
 
@@ -125,27 +112,13 @@ function testNotificationCallbacksSwallowUserData(): void {
   // after dropping the user_data context reference.
   assert.deepEqual(seen, [[1, sampleWarningCode]], "Callback failed to intercept wrapped values cleanly");
 
-  console.log("✓ Context memory stripping evaluation passed");
-  console.log();
 }
+test("Notification Callbacks Empty", testNotificationCallbacksEmpty);
 
-/**
- * Test Runner
- */
-function testNotifications(): void {
-  try {
-    testNotificationCallbacksEmpty();
-    testNotificationCallbacksSingle();
-    testNotificationCallbacksUnknownRaises();
-    testNotificationCallbacksUserDataRejected();
-    testNotificationCallbacksSwallowUserData();
-    console.log("ALL NOTIFICATION TESTS PASSED");
-  } catch (err) {
-    console.error();
-    console.error("TEST FAILED");
-    console.error(err);
-    process.exit(1);
-  }
-}
+test("Notification Callbacks Single", testNotificationCallbacksSingle);
 
-testNotifications();
+test("Notification Callbacks Unknown Raises", testNotificationCallbacksUnknownRaises);
+
+test("Notification Callbacks User Data Rejected", testNotificationCallbacksUserDataRejected);
+
+test("Notification Callbacks Swallow User Data", testNotificationCallbacksSwallowUserData);
